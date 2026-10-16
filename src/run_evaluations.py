@@ -1,19 +1,13 @@
-#!/usr/bin/env python3
-from __future__ import annotations
-
 import json
 import os
-import sys
 from pathlib import Path
 
+from adversarial_cases import load_adversarial_cases
+from clients.anythingllm_client import AnythingLLMClient
+from evaluation_results import EvaluationResult
+from evaluators.adversarial_evaluator import evaluate_adversarial_case
+
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
-
-from adversarial_cases import load_adversarial_cases  # noqa: E402
-from clients.anythingllm_client import AnythingLLMClient  # noqa: E402
-from evaluation_results import EvaluationResult  # noqa: E402
-from evaluators.adversarial_evaluator import evaluate_adversarial_case  # noqa: E402
-
 CASES_PATH = ROOT / "fixtures" / "datasets" / "adversarial_conversations.yaml"
 REPORTS_DIR = ROOT / "reports"
 JSON_REPORT_PATH = REPORTS_DIR / "adversarial_report.json"
@@ -87,7 +81,10 @@ def build_markdown_report(results: list[EvaluationResult]) -> str:
     ]
 
     for result in results:
-        status = "PASS" if result.passed else "FAIL"
+        if result.passed:
+            status = "PASS"
+        else:
+            status = "FAIL"
         sections.append(f"### {status} — {result.case_id}")
         sections.append("")
         sections.append(f"**Category:** {result.category}")
@@ -135,7 +132,10 @@ def main() -> int:
             workspace_slug=workspace_slug,
             case=case,
         )
-        status = "PASS" if result.passed else "FAIL"
+        if result.passed:
+            status = "PASS"
+        else:
+            status = "FAIL"
         print(f"  {status}")
         results.append(result)
 
