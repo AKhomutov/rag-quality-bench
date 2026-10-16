@@ -51,6 +51,31 @@ def _get_required_string(mapping: dict[str, object], key: str) -> str:
     return value
 
 
+def _parse_chat_response(raw: object) -> ChatResponse:
+    payload = _validate_json_object(raw)
+
+    sources_raw = payload.get("sources")
+    if not isinstance(sources_raw, list):
+        raise TypeError("expected sources list")
+
+    sources: list[Source] = []
+    for item in cast(list[object], sources_raw):
+        source = _validate_json_object(item)
+        sources.append(
+            Source(
+                title=_get_required_string(source, "title"),
+                text=_get_required_string(source, "text"),
+            )
+        )
+
+    text_response = _get_required_string(payload, "textResponse")
+    return ChatResponse(
+        text_response=text_response,
+        final_answer=_extract_final_answer(text_response),
+        sources=sources,
+    )
+
+
 class AnythingLLMClient:
     def __init__(self) -> None:
         self.base_url = os.environ["ANYTHINGLLM_BASE_URL"].rstrip("/")
@@ -64,6 +89,24 @@ class AnythingLLMClient:
             }
         )
 
+    def create_thread(self, workspace_slug: str, thread_slug: str) -> str:
+        body: dict[str, str] = {
+            "name": thread_slug,
+            "slug": thread_slug,
+        }
+        response = self.session.post(
+            f"{self.base_url}/api/v1/workspace/{workspace_slug}/thread/new",
+            json=body,
+            timeout=60,
+        )
+        response.raise_for_status()
+
+        raw: object = response.json()
+        payload = _validate_json_object(raw)
+        thread_raw = payload.get("thread")
+        thread = _validate_json_object(thread_raw)
+        return _get_required_string(thread, "slug")
+
     def chat(self, workspace_slug: str, message: str) -> ChatResponse:
         body: dict[str, str] = {
             "message": message,
@@ -75,27 +118,24 @@ class AnythingLLMClient:
             timeout=60,
         )
         response.raise_for_status()
-
         raw: object = response.json()
-        payload = _validate_json_object(raw)
+        return _parse_chat_response(raw)
 
-        sources_raw = payload.get("sources")
-        if not isinstance(sources_raw, list):
-            raise TypeError("expected sources list")
-
-        sources: list[Source] = []
-        for item in cast(list[object], sources_raw):
-            source = _validate_json_object(item)
-            sources.append(
-                Source(
-                    title=_get_required_string(source, "title"),
-                    text=_get_required_string(source, "text"),
-                )
-            )
-
-        text_response = _get_required_string(payload, "textResponse")
-        return ChatResponse(
-            text_response=text_response,
-            final_answer=_extract_final_answer(text_response),
-            sources=sources,
+    def thread_chat(
+        self,
+        workspace_slug: str,
+        thread_slug: str,
+        message: str,
+    ) -> ChatResponse:
+        body: dict[str, str] = {
+            "message": message,
+            "mode": "query",
+        }
+        response = self.session.post(
+            f"{self.base_url}/api/v1/workspace/{workspace_slug}/thread/{thread_slug}/chat",
+            json=body,
+            timeout=60,
         )
+        response.raise_for_status()
+        raw: object = response.json()
+        return _parse_chat_response(raw)
