@@ -36,7 +36,7 @@ select = [
     "RUF",   # Ruff-specific checks
     "ANN",   # type annotations
 ]
-ignore = ["SIM110"]
+ignore = ["SIM110", "SIM108"]
 
 [tool.ruff.format]
 quote-style = "double"

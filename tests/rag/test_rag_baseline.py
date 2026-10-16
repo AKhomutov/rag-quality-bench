@@ -3,43 +3,31 @@ from pathlib import Path
 
 import pytest
 
-from clients.anythingllm_client import AnythingLLMClient, Source
+from clients.anythingllm_client import AnythingLLMClient
+from evaluation_assertions import format_evaluation_failure
+from evaluators.baseline_evaluator import evaluate_rag_case
 from rag_cases import RagCase, load_rag_cases
 
 RAG_CASES = load_rag_cases(Path("fixtures/datasets/rag_cases.yaml"))
 
-
-def contains_source_text(sources: list[Source], expected_text: str) -> bool:
-    for source in sources:
-        if expected_text in source.text:
-            return True
-
-    return False
-
-
-def normalize_answer_text(text: str) -> str:
-    return text.replace("**", "")
+RAG_CASE_IDS: list[str] = []
+for case in RAG_CASES:
+    RAG_CASE_IDS.append(case.id)
 
 
 @pytest.mark.parametrize(
     "case",
     RAG_CASES,
-    ids=[case.id for case in RAG_CASES],
+    ids=RAG_CASE_IDS,
 )
 def test_rag_case(case: RagCase) -> None:
     client = AnythingLLMClient()
+    workspace_slug = os.environ["ANYTHINGLLM_WORKSPACE"]
 
-    response = client.chat(
-        workspace_slug=os.environ["ANYTHINGLLM_WORKSPACE"],
-        message=case.question,
+    result = evaluate_rag_case(
+        client=client,
+        workspace_slug=workspace_slug,
+        case=case,
     )
 
-    normalized_answer = normalize_answer_text(response.final_answer)
-    assert any(expected in normalized_answer for expected in case.expected_answer_contains_any)
-    if case.expected_source_contains is not None:
-        assert contains_source_text(
-            response.sources,
-            case.expected_source_contains,
-        )
-    if case.expected_answer_excludes is not None:
-        assert case.expected_answer_excludes not in normalized_answer
+    assert result.passed, format_evaluation_failure(result)

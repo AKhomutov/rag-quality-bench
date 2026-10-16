@@ -3,6 +3,7 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class EvaluationResult:
+    suite: str
     case_id: str
     category: str
     passed: bool

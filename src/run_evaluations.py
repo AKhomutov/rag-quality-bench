@@ -6,12 +6,15 @@ from adversarial_cases import load_adversarial_cases
 from clients.anythingllm_client import AnythingLLMClient
 from evaluation_results import EvaluationResult
 from evaluators.adversarial_evaluator import evaluate_adversarial_case
+from evaluators.baseline_evaluator import evaluate_rag_case
+from rag_cases import load_rag_cases
 
 ROOT = Path(__file__).resolve().parents[1]
-CASES_PATH = ROOT / "fixtures" / "datasets" / "adversarial_conversations.yaml"
+BASELINE_CASES_PATH = ROOT / "fixtures" / "datasets" / "rag_cases.yaml"
+ADVERSARIAL_CASES_PATH = ROOT / "fixtures" / "datasets" / "adversarial_conversations.yaml"
 REPORTS_DIR = ROOT / "reports"
-JSON_REPORT_PATH = REPORTS_DIR / "adversarial_report.json"
-MARKDOWN_REPORT_PATH = REPORTS_DIR / "adversarial_report.md"
+JSON_REPORT_PATH = REPORTS_DIR / "evaluation_report.json"
+MARKDOWN_REPORT_PATH = REPORTS_DIR / "evaluation_report.md"
 
 
 def count_passed(results: list[EvaluationResult]) -> int:
@@ -22,8 +25,25 @@ def count_passed(results: list[EvaluationResult]) -> int:
     return passed_count
 
 
+def count_suite_stats(results: list[EvaluationResult], suite: str) -> dict[str, int]:
+    total = 0
+    passed = 0
+    for result in results:
+        if result.suite != suite:
+            continue
+        total += 1
+        if result.passed:
+            passed += 1
+    return {
+        "total": total,
+        "passed": passed,
+        "failed": total - passed,
+    }
+
+
 def result_to_json_object(result: EvaluationResult) -> dict[str, object]:
     return {
+        "suite": result.suite,
         "case_id": result.case_id,
         "category": result.category,
         "passed": result.passed,
@@ -48,6 +68,10 @@ def build_json_payload(results: list[EvaluationResult]) -> dict[str, object]:
             "passed": passed_count,
             "failed": failed_count,
         },
+        "suites": {
+            "baseline": count_suite_stats(results, "baseline"),
+            "adversarial": count_suite_stats(results, "adversarial"),
+        },
         "results": results_data,
     }
 
@@ -63,46 +87,80 @@ def format_blockquote(text: str) -> str:
     return "\n".join(quoted_lines)
 
 
+def append_result_section(sections: list[str], result: EvaluationResult) -> None:
+    if result.passed:
+        status = "PASS"
+    else:
+        status = "FAIL"
+
+    sections.append(f"### {status} — {result.case_id}")
+    sections.append("")
+    sections.append(f"**Category:** {result.category}")
+    sections.append("")
+    sections.append(f"**Expected behavior:** {result.expected_behavior}")
+    sections.append("")
+
+    if not result.passed:
+        sections.append(f"**Failure classification:** {result.failure_description}")
+        sections.append("")
+        sections.append("**Observed failures:**")
+        for failure in result.failures:
+            sections.append(f"- {failure}")
+        sections.append("")
+        sections.append("**Final answer:**")
+        sections.append("")
+        sections.append(format_blockquote(result.final_answer))
+        sections.append("")
+
+
+def filter_results_by_suite(
+    results: list[EvaluationResult],
+    suite: str,
+) -> list[EvaluationResult]:
+    filtered: list[EvaluationResult] = []
+    for result in results:
+        if result.suite == suite:
+            filtered.append(result)
+    return filtered
+
+
 def build_markdown_report(results: list[EvaluationResult]) -> str:
-    passed_count = count_passed(results)
-    failed_count = len(results) - passed_count
+    baseline_stats = count_suite_stats(results, "baseline")
+    adversarial_stats = count_suite_stats(results, "adversarial")
+    overall_passed = count_passed(results)
+    overall_failed = len(results) - overall_passed
 
     sections: list[str] = [
-        "# Adversarial RAG Evaluation Report",
+        "# RAG Quality Evaluation Report",
         "",
         "## Summary",
         "",
-        "| Total | Passed | Failed |",
-        "| ---: | ---: | ---: |",
-        f"| {len(results)} | {passed_count} | {failed_count} |",
+        "| Suite | Total | Passed | Failed |",
+        "| --- | ---: | ---: | ---: |",
+        (
+            f"| Baseline | {baseline_stats['total']} | "
+            f"{baseline_stats['passed']} | {baseline_stats['failed']} |"
+        ),
+        (
+            f"| Adversarial | {adversarial_stats['total']} | "
+            f"{adversarial_stats['passed']} | {adversarial_stats['failed']} |"
+        ),
+        f"| **Overall** | **{len(results)}** | **{overall_passed}** | **{overall_failed}** |",
         "",
-        "## Results",
+        "## Baseline Results",
         "",
     ]
 
-    for result in results:
-        if result.passed:
-            status = "PASS"
-        else:
-            status = "FAIL"
-        sections.append(f"### {status} — {result.case_id}")
-        sections.append("")
-        sections.append(f"**Category:** {result.category}")
-        sections.append("")
-        sections.append(f"**Expected behavior:** {result.expected_behavior}")
-        sections.append("")
+    baseline_results = filter_results_by_suite(results, "baseline")
+    for result in baseline_results:
+        append_result_section(sections, result)
 
-        if not result.passed:
-            sections.append(f"**Failure classification:** {result.failure_description}")
-            sections.append("")
-            sections.append("**Observed failures:**")
-            for failure in result.failures:
-                sections.append(f"- {failure}")
-            sections.append("")
-            sections.append("**Final answer:**")
-            sections.append("")
-            sections.append(format_blockquote(result.final_answer))
-            sections.append("")
+    sections.append("## Adversarial Results")
+    sections.append("")
+
+    adversarial_results = filter_results_by_suite(results, "adversarial")
+    for result in adversarial_results:
+        append_result_section(sections, result)
 
     return "\n".join(sections)
 
@@ -119,34 +177,62 @@ def write_markdown_report(path: Path, results: list[EvaluationResult]) -> None:
     path.write_text(content, encoding="utf-8")
 
 
+def print_status(result: EvaluationResult) -> None:
+    if result.passed:
+        status = "PASS"
+    else:
+        status = "FAIL"
+    print(f"  {status}")
+
+
 def main() -> int:
-    cases = load_adversarial_cases(CASES_PATH)
     client = AnythingLLMClient()
     workspace_slug = os.environ["ANYTHINGLLM_WORKSPACE"]
 
     results: list[EvaluationResult] = []
-    for case in cases:
-        print(f"Evaluating {case.id}...")
+
+    print("Baseline evaluations")
+    print("--------------------")
+    baseline_cases = load_rag_cases(BASELINE_CASES_PATH)
+    for baseline_case in baseline_cases:
+        print(f"Evaluating {baseline_case.id}...")
+        result = evaluate_rag_case(
+            client=client,
+            workspace_slug=workspace_slug,
+            case=baseline_case,
+        )
+        print_status(result)
+        results.append(result)
+
+    print()
+    print("Adversarial evaluations")
+    print("-----------------------")
+    adversarial_cases = load_adversarial_cases(ADVERSARIAL_CASES_PATH)
+    for adversarial_case in adversarial_cases:
+        print(f"Evaluating {adversarial_case.id}...")
         result = evaluate_adversarial_case(
             client=client,
             workspace_slug=workspace_slug,
-            case=case,
+            case=adversarial_case,
         )
-        if result.passed:
-            status = "PASS"
-        else:
-            status = "FAIL"
-        print(f"  {status}")
+        print_status(result)
         results.append(result)
 
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     write_json_report(JSON_REPORT_PATH, results)
     write_markdown_report(MARKDOWN_REPORT_PATH, results)
 
+    baseline_stats = count_suite_stats(results, "baseline")
+    adversarial_stats = count_suite_stats(results, "adversarial")
     passed_count = count_passed(results)
     failed_count = len(results) - passed_count
+
     print()
-    print(f"Summary: {passed_count} passed / {failed_count} failed / {len(results)} total")
+    print(f"baseline:    {baseline_stats['passed']} passed / {baseline_stats['failed']} failed")
+    print(
+        f"adversarial: {adversarial_stats['passed']} passed / {adversarial_stats['failed']} failed"
+    )
+    print(f"overall:     {passed_count} passed / {failed_count} failed")
     print(f"Wrote {JSON_REPORT_PATH}")
     print(f"Wrote {MARKDOWN_REPORT_PATH}")
 

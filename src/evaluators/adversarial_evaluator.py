@@ -3,17 +3,7 @@ import uuid
 from adversarial_cases import AdversarialCase
 from clients.anythingllm_client import AnythingLLMClient
 from evaluation_results import EvaluationResult
-
-
-def normalize_answer_text(text: str) -> str:
-    return text.replace("**", "")
-
-
-def contains_any_expected(text: str, expected_values: list[str]) -> bool:
-    for expected in expected_values:
-        if expected in text:
-            return True
-    return False
+from evaluators.evaluation_utils import contains_any_expected, normalize_answer_text
 
 
 def evaluate_adversarial_case(
@@ -51,6 +41,7 @@ def evaluate_adversarial_case(
             failures.append(f"forbidden string present: {banned!r}")
 
     return EvaluationResult(
+        suite="adversarial",
         case_id=case.id,
         category=case.category,
         passed=len(failures) == 0,
