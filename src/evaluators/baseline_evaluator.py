@@ -35,9 +35,8 @@ def evaluate_rag_case(
     if not contains_any_expected(normalized_answer, case.expected_answer_contains_any):
         failures.append("final answer missing any expected answer variant")
 
-    if (
-        case.expected_answer_excludes is not None
-        and case.expected_answer_excludes in normalized_answer
+    if case.expected_answer_excludes is not None and (
+        normalize_answer_text(case.expected_answer_excludes) in normalized_answer
     ):
         failures.append(f"forbidden answer string present: {case.expected_answer_excludes!r}")
 

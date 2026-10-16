@@ -1,3 +1,4 @@
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -58,47 +59,44 @@ def unique_tools(tools_used: list[str]) -> list[str]:
 
 def run_agent_trial(
     client: AnythingLLMClient,
-    documents: list[Path],
+    workspace_slug: str,
     case: AgentToolSelectionCase,
 ) -> AgentTrialResult:
-    workspace: PreparedWorkspace | None = None
+    thread_slug = f"{case.id}-{uuid.uuid4().hex[:8]}"
+    created_thread = client.create_thread(workspace_slug, thread_slug)
 
-    try:
-        workspace = prepare_workspace(client, documents)
-        response = client.agent_chat(
-            workspace_slug=workspace.slug,
-            message=case.question,
-        )
+    response = client.agent_thread_chat(
+        workspace_slug=workspace_slug,
+        thread_slug=created_thread,
+        message=case.question,
+    )
 
-        normalized_answer = normalize_answer_text(response.final_answer)
-        tools_used: list[str] = []
-        for tool_call in response.tool_calls:
-            tools_used.append(tool_call.name)
+    normalized_answer = normalize_answer_text(response.final_answer)
+    tools_used: list[str] = []
+    for tool_call in response.tool_calls:
+        tools_used.append(tool_call.name)
 
-        failures: list[str] = []
+    failures: list[str] = []
 
-        if not contains_any_expected(normalized_answer, case.expected_answer_contains_any):
-            failures.append("final answer missing any expected answer variant")
+    if not contains_any_expected(normalized_answer, case.expected_answer_contains_any):
+        failures.append("final answer missing any expected answer variant")
 
-        for forbidden in case.forbidden_tools:
-            if tool_was_used(tools_used, forbidden):
-                failures.append(f"forbidden tool called: {forbidden!r}")
+    for forbidden in case.forbidden_tools:
+        if tool_was_used(tools_used, forbidden):
+            failures.append(f"forbidden tool called: {forbidden!r}")
 
-        if case.preferred_tools and not any_preferred_tool_used(
-            tools_used,
-            case.preferred_tools,
-        ):
-            failures.append("expected workspace/RAG tool was not used")
+    if case.preferred_tools and not any_preferred_tool_used(
+        tools_used,
+        case.preferred_tools,
+    ):
+        failures.append("expected workspace/RAG tool was not used")
 
-        return AgentTrialResult(
-            passed=len(failures) == 0,
-            final_answer=normalized_answer,
-            failures=failures,
-            tools_used=tools_used,
-        )
-    finally:
-        if workspace is not None:
-            cleanup_workspace(client, workspace)
+    return AgentTrialResult(
+        passed=len(failures) == 0,
+        final_answer=normalized_answer,
+        failures=failures,
+        tools_used=tools_used,
+    )
 
 
 def evaluate_agent_tool_selection_case(
@@ -106,16 +104,23 @@ def evaluate_agent_tool_selection_case(
     case: AgentToolSelectionCase,
 ) -> EvaluationResult:
     documents = resolve_case_documents(case)
-
+    workspace: PreparedWorkspace | None = None
     trial_results: list[AgentTrialResult] = []
-    for _trial_number in range(case.trials):
-        trial_results.append(
-            run_agent_trial(
-                client=client,
-                documents=documents,
-                case=case,
+
+    try:
+        workspace = prepare_workspace(client, documents)
+
+        for _trial_number in range(case.trials):
+            trial_results.append(
+                run_agent_trial(
+                    client=client,
+                    workspace_slug=workspace.slug,
+                    case=case,
+                )
             )
-        )
+    finally:
+        if workspace is not None:
+            cleanup_workspace(client, workspace)
 
     total_trials = len(trial_results)
     passed_trials = 0

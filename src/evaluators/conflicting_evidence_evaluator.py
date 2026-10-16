@@ -55,14 +55,14 @@ def evaluate_conflicting_evidence_case(
         failures: list[str] = []
 
         for expected in case.expected_final_contains_all:
-            if expected not in normalized_answer:
+            if normalize_answer_text(expected) not in normalized_answer:
                 failures.append(f"missing expected string {expected!r}")
 
         if not contains_any_expected(normalized_answer, case.expected_final_contains_any):
             failures.append("final answer missing any accepted conflict acknowledgment")
 
         for banned in case.expected_final_excludes:
-            if banned in normalized_answer:
+            if normalize_answer_text(banned) in normalized_answer:
                 failures.append(f"forbidden string present: {banned!r}")
 
         return EvaluationResult(

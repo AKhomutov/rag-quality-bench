@@ -4,6 +4,13 @@ from typing import cast
 
 import yaml
 
+from yaml_validation import (
+    get_required_list,
+    get_required_string,
+    get_required_string_list,
+    validate_yaml_object,
+)
+
 
 @dataclass(frozen=True)
 class AgentToolSelectionCase:
@@ -18,57 +25,6 @@ class AgentToolSelectionCase:
     preferred_tools: list[str]
     trials: int
     minimum_pass_rate: float
-
-
-def _validate_yaml_object(value: object) -> dict[str, object]:
-    if not isinstance(value, dict):
-        msg = f"expected YAML object, got {type(value).__name__}"
-        raise TypeError(msg)
-
-    result: dict[str, object] = {}
-    raw_items = cast(list[tuple[object, object]], list(value.items()))
-
-    for key, item in raw_items:
-        if not isinstance(key, str):
-            msg = f"expected string key, got {type(key).__name__}"
-            raise TypeError(msg)
-
-        result[key] = item
-
-    return result
-
-
-def _get_required_string(mapping: dict[str, object], key: str) -> str:
-    value = mapping.get(key)
-
-    if not isinstance(value, str):
-        msg = f"expected string field {key!r}, got {type(value).__name__}"
-        raise TypeError(msg)
-
-    return value
-
-
-def _get_required_list(mapping: dict[str, object], key: str) -> list[object]:
-    value = mapping.get(key)
-
-    if not isinstance(value, list):
-        msg = f"expected list field {key!r}, got {type(value).__name__}"
-        raise TypeError(msg)
-
-    return cast(list[object], value)
-
-
-def _get_required_string_list(mapping: dict[str, object], key: str) -> list[str]:
-    value = _get_required_list(mapping, key)
-    result: list[str] = []
-
-    for item in value:
-        if not isinstance(item, str):
-            msg = f"expected string items in {key!r}, got {type(item).__name__}"
-            raise TypeError(msg)
-        result.append(item)
-
-    return result
 
 
 def _get_required_int(mapping: dict[str, object], key: str) -> int:
@@ -95,15 +51,15 @@ def load_agent_tool_selection_cases(path: Path) -> list[AgentToolSelectionCase]:
     with path.open(encoding="utf-8") as file:
         raw = cast(object, yaml.safe_load(file))
 
-    root = _validate_yaml_object(raw)
-    cases_raw = _get_required_list(root, "cases")
+    root = validate_yaml_object(raw)
+    cases_raw = get_required_list(root, "cases")
 
     cases: list[AgentToolSelectionCase] = []
 
     for item in cases_raw:
-        case_data = _validate_yaml_object(item)
+        case_data = validate_yaml_object(item)
 
-        documents = _get_required_string_list(case_data, "documents")
+        documents = get_required_string_list(case_data, "documents")
         if not documents:
             msg = f"case {case_data.get('id')!r} must declare at least one document"
             raise ValueError(msg)
@@ -122,18 +78,18 @@ def load_agent_tool_selection_cases(path: Path) -> list[AgentToolSelectionCase]:
             raise ValueError(msg)
 
         case = AgentToolSelectionCase(
-            id=_get_required_string(case_data, "id"),
-            category=_get_required_string(case_data, "category"),
-            expected_behavior=_get_required_string(case_data, "expected_behavior"),
-            failure_description=_get_required_string(case_data, "failure_description"),
+            id=get_required_string(case_data, "id"),
+            category=get_required_string(case_data, "category"),
+            expected_behavior=get_required_string(case_data, "expected_behavior"),
+            failure_description=get_required_string(case_data, "failure_description"),
             documents=documents,
-            question=_get_required_string(case_data, "question"),
-            expected_answer_contains_any=_get_required_string_list(
+            question=get_required_string(case_data, "question"),
+            expected_answer_contains_any=get_required_string_list(
                 case_data,
                 "expected_answer_contains_any",
             ),
-            forbidden_tools=_get_required_string_list(case_data, "forbidden_tools"),
-            preferred_tools=_get_required_string_list(case_data, "preferred_tools"),
+            forbidden_tools=get_required_string_list(case_data, "forbidden_tools"),
+            preferred_tools=get_required_string_list(case_data, "preferred_tools"),
             trials=trials,
             minimum_pass_rate=minimum_pass_rate,
         )

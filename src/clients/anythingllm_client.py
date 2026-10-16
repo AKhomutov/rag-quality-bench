@@ -338,3 +338,27 @@ class AnythingLLMClient:
         response.raise_for_status()
         raw: object = response.json()
         return _parse_agent_chat_response(raw)
+
+    def agent_thread_chat(
+        self,
+        workspace_slug: str,
+        thread_slug: str,
+        message: str,
+    ) -> AgentChatResponse:
+        if message.startswith("@agent"):
+            agent_message = message
+        else:
+            agent_message = f"@agent {message}"
+
+        body: dict[str, str] = {
+            "message": agent_message,
+            "mode": "chat",
+        }
+        response = self.session.post(
+            f"{self.base_url}/api/v1/workspace/{workspace_slug}/thread/{thread_slug}/chat",
+            json=body,
+            timeout=300,
+        )
+        response.raise_for_status()
+        raw: object = response.json()
+        return _parse_agent_chat_response(raw)

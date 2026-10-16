@@ -25,6 +25,7 @@ py-modules = [
   "agent_cases",
   "evaluation_results",
   "evaluation_assertions",
+  "yaml_validation",
 ]
 
 [tool.setuptools.packages.find]
