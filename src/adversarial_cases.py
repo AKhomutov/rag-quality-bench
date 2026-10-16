@@ -13,6 +13,9 @@ class ConversationStep:
 @dataclass(frozen=True)
 class AdversarialCase:
     id: str
+    category: str
+    expected_behavior: str
+    failure_description: str
     steps: list[ConversationStep]
     expected_final_contains_all: list[str]
     expected_final_contains_any: list[str]
@@ -98,6 +101,9 @@ def load_adversarial_cases(path: Path) -> list[AdversarialCase]:
 
         case = AdversarialCase(
             id=_get_required_string(case_data, "id"),
+            category=_get_required_string(case_data, "category"),
+            expected_behavior=_get_required_string(case_data, "expected_behavior"),
+            failure_description=_get_required_string(case_data, "failure_description"),
             steps=steps,
             expected_final_contains_all=_get_required_string_list(
                 case_data,
