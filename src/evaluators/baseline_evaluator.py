@@ -50,7 +50,7 @@ def evaluate_rag_case(
     return EvaluationResult(
         suite="baseline",
         case_id=case.id,
-        category="baseline_rag",
+        category=case.category,
         passed=len(failures) == 0,
         expected_behavior=BASELINE_EXPECTED_BEHAVIOR,
         failure_description=BASELINE_FAILURE_DESCRIPTION,

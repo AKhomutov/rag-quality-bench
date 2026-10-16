@@ -8,6 +8,7 @@ import yaml
 @dataclass(frozen=True)
 class RagCase:
     id: str
+    category: str
     question: str
     expected_answer_contains_any: list[str]
     expected_source_contains: str | None
@@ -92,6 +93,7 @@ def load_rag_cases(path: Path) -> list[RagCase]:
 
         case = RagCase(
             id=_get_required_string(case_data, "id"),
+            category=_get_required_string(case_data, "category"),
             question=_get_required_string(case_data, "question"),
             expected_answer_contains_any=_get_required_string_list(
                 case_data,
