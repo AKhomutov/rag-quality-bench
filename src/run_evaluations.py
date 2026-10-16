@@ -41,6 +41,41 @@ def count_suite_stats(results: list[EvaluationResult], suite: str) -> dict[str, 
     }
 
 
+def count_category_stats(
+    results: list[EvaluationResult],
+    category: str,
+) -> dict[str, int]:
+    total = 0
+    passed = 0
+    for result in results:
+        if result.category != category:
+            continue
+        total += 1
+        if result.passed:
+            passed += 1
+    return {
+        "total": total,
+        "passed": passed,
+        "failed": total - passed,
+    }
+
+
+def collect_categories(results: list[EvaluationResult]) -> list[str]:
+    categories: list[str] = []
+    for result in results:
+        if result.category not in categories:
+            categories.append(result.category)
+    return categories
+
+
+def build_categories_payload(results: list[EvaluationResult]) -> dict[str, object]:
+    categories_data: dict[str, object] = {}
+    categories = collect_categories(results)
+    for category in categories:
+        categories_data[category] = count_category_stats(results, category)
+    return categories_data
+
+
 def result_to_json_object(result: EvaluationResult) -> dict[str, object]:
     return {
         "suite": result.suite,
@@ -72,6 +107,7 @@ def build_json_payload(results: list[EvaluationResult]) -> dict[str, object]:
             "baseline": count_suite_stats(results, "baseline"),
             "adversarial": count_suite_stats(results, "adversarial"),
         },
+        "categories": build_categories_payload(results),
         "results": results_data,
     }
 
@@ -147,9 +183,23 @@ def build_markdown_report(results: list[EvaluationResult]) -> str:
         ),
         f"| **Overall** | **{len(results)}** | **{overall_passed}** | **{overall_failed}** |",
         "",
-        "## Baseline Results",
+        "## Category Breakdown",
         "",
+        "| Category | Total | Passed | Failed |",
+        "| --- | ---: | ---: | ---: |",
     ]
+
+    categories = collect_categories(results)
+    for category in categories:
+        category_stats = count_category_stats(results, category)
+        sections.append(
+            f"| {category} | {category_stats['total']} | "
+            f"{category_stats['passed']} | {category_stats['failed']} |"
+        )
+
+    sections.append("")
+    sections.append("## Baseline Results")
+    sections.append("")
 
     baseline_results = filter_results_by_suite(results, "baseline")
     for result in baseline_results:
@@ -233,6 +283,13 @@ def main() -> int:
         f"adversarial: {adversarial_stats['passed']} passed / {adversarial_stats['failed']} failed"
     )
     print(f"overall:     {passed_count} passed / {failed_count} failed")
+    print("categories:")
+    categories = collect_categories(results)
+    for category in categories:
+        category_stats = count_category_stats(results, category)
+        print(
+            f"  {category}: {category_stats['passed']} passed / {category_stats['failed']} failed"
+        )
     print(f"Wrote {JSON_REPORT_PATH}")
     print(f"Wrote {MARKDOWN_REPORT_PATH}")
 
