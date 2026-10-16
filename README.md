@@ -292,15 +292,22 @@ The script:
 - verifies the required Ollama models and their digests;
 - pulls the pinned AnythingLLM image.
 
-Create an AnythingLLM API key once and add it to `.env`.
-
 Start the runtime:
 
 ```bash
 ./scripts/start.sh
 ```
 
-The script starts AnythingLLM and waits for both AnythingLLM and Ollama API readiness.
+The script starts AnythingLLM and waits for both AnythingLLM and Ollama API readiness, including a check that the AnythingLLM container can reach Ollama.
+
+Then complete first-time AnythingLLM setup if needed, create an API key in the UI, and add it to `.env`:
+
+```text
+ANYTHINGLLM_BASE_URL=http://localhost:3001
+ANYTHINGLLM_API_KEY=your_api_key_here
+```
+
+`bootstrap.sh` may create `.env` from `.env.example`, but the API key can only be filled in after AnythingLLM is running.
 
 Verify the environment:
 
@@ -324,8 +331,6 @@ Ollama runs as a native host service and is not stopped by the project scripts.
 
 ## Environment variables
 
-Create `.env` from `.env.example` and provide an AnythingLLM API key:
-
 ```text
 ANYTHINGLLM_BASE_URL=http://localhost:3001
 ANYTHINGLLM_API_KEY=your_api_key_here
@@ -345,19 +350,16 @@ Model behavior remains non-deterministic. Repeated trials are used where that be
 
 ## Development
 
-Run pytest directly:
+Use the project virtualenv executables:
 
 ```bash
-pytest -v
+.venv/bin/pytest -v
+.venv/bin/ruff check .
+.venv/bin/ruff format --check .
+.venv/bin/mypy src tests
 ```
 
-Static checks:
-
-```bash
-ruff check .
-ruff format --check .
-mypy src tests
-```
+Some evaluations intentionally fail when known model behavior is reproduced, so pytest/run-evals may return a non-zero exit code.
 
 ## Tech stack
 

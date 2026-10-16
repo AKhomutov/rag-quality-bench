@@ -3,7 +3,6 @@ name: rag-quality-bench
 services:
   anythingllm:
     image: mintplexlabs/anythingllm@sha256:2d8c94fcc5bbc2bd905abfc18cb83038d01def1a1be89238151be2e103b35f5b
-    container_name: anythingllm
     ports:
       - "3001:3001"
     environment:

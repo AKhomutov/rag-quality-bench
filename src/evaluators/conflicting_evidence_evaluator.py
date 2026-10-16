@@ -5,7 +5,12 @@ from clients.anythingllm_client import AnythingLLMClient
 from conflicting_cases import ConflictingEvidenceCase
 from evaluation_results import EvaluationResult
 from evaluators.evaluation_utils import contains_any_expected, normalize_answer_text
-from workspace_setup import PROJECT_ROOT, cleanup_workspace, prepare_workspace
+from workspace_setup import (
+    PROJECT_ROOT,
+    PreparedWorkspace,
+    cleanup_workspace,
+    prepare_workspace,
+)
 
 DOCUMENTS_DIR = PROJECT_ROOT / "fixtures" / "documents"
 
@@ -26,18 +31,18 @@ def evaluate_conflicting_evidence_case(
     case: ConflictingEvidenceCase,
 ) -> EvaluationResult:
     documents = resolve_case_documents(case)
-    workspace_slug: str | None = None
+    workspace: PreparedWorkspace | None = None
 
     try:
-        workspace_slug = prepare_workspace(client, documents)
+        workspace = prepare_workspace(client, documents)
 
         thread_slug = f"{case.id}-{uuid.uuid4().hex[:8]}"
-        created_slug = client.create_thread(workspace_slug, thread_slug)
+        created_slug = client.create_thread(workspace.slug, thread_slug)
 
         final_response = None
         for step in case.steps:
             final_response = client.thread_chat(
-                workspace_slug=workspace_slug,
+                workspace_slug=workspace.slug,
                 thread_slug=created_slug,
                 message=step.message,
             )
@@ -73,5 +78,5 @@ def evaluate_conflicting_evidence_case(
             trial_summary=None,
         )
     finally:
-        if workspace_slug is not None:
-            cleanup_workspace(client, workspace_slug)
+        if workspace is not None:
+            cleanup_workspace(client, workspace)

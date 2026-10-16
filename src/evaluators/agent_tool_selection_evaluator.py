@@ -5,7 +5,12 @@ from agent_cases import AgentToolSelectionCase
 from clients.anythingllm_client import AnythingLLMClient
 from evaluation_results import EvaluationResult, TrialSummary
 from evaluators.evaluation_utils import contains_any_expected, normalize_answer_text
-from workspace_setup import PROJECT_ROOT, cleanup_workspace, prepare_workspace
+from workspace_setup import (
+    PROJECT_ROOT,
+    PreparedWorkspace,
+    cleanup_workspace,
+    prepare_workspace,
+)
 
 DOCUMENTS_DIR = PROJECT_ROOT / "fixtures" / "documents"
 
@@ -56,12 +61,12 @@ def run_agent_trial(
     documents: list[Path],
     case: AgentToolSelectionCase,
 ) -> AgentTrialResult:
-    workspace_slug: str | None = None
+    workspace: PreparedWorkspace | None = None
 
     try:
-        workspace_slug = prepare_workspace(client, documents)
+        workspace = prepare_workspace(client, documents)
         response = client.agent_chat(
-            workspace_slug=workspace_slug,
+            workspace_slug=workspace.slug,
             message=case.question,
         )
 
@@ -92,8 +97,8 @@ def run_agent_trial(
             tools_used=tools_used,
         )
     finally:
-        if workspace_slug is not None:
-            cleanup_workspace(client, workspace_slug)
+        if workspace is not None:
+            cleanup_workspace(client, workspace)
 
 
 def evaluate_agent_tool_selection_case(

@@ -11,7 +11,12 @@ from evaluators.agent_tool_selection_evaluator import evaluate_agent_tool_select
 from evaluators.baseline_evaluator import evaluate_rag_case
 from evaluators.conflicting_evidence_evaluator import evaluate_conflicting_evidence_case
 from rag_cases import load_rag_cases
-from workspace_setup import STANDARD_DOCUMENTS, cleanup_workspace, prepare_workspace
+from workspace_setup import (
+    STANDARD_DOCUMENTS,
+    PreparedWorkspace,
+    cleanup_workspace,
+    prepare_workspace,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 BASELINE_CASES_PATH = ROOT / "fixtures" / "datasets" / "rag_cases.yaml"
@@ -309,13 +314,13 @@ def print_status(result: EvaluationResult) -> None:
 
 def main() -> int:
     client = AnythingLLMClient()
-    workspace_slug: str | None = None
+    workspace: PreparedWorkspace | None = None
     exit_code = 1
 
     try:
         print("Preparing temporary workspace...")
-        workspace_slug = prepare_workspace(client, STANDARD_DOCUMENTS)
-        print(f"Workspace ready: {workspace_slug}")
+        workspace = prepare_workspace(client, STANDARD_DOCUMENTS)
+        print(f"Workspace ready: {workspace.slug}")
         print()
 
         results: list[EvaluationResult] = []
@@ -327,7 +332,7 @@ def main() -> int:
             print(f"Evaluating {baseline_case.id}...")
             result = evaluate_rag_case(
                 client=client,
-                workspace_slug=workspace_slug,
+                workspace_slug=workspace.slug,
                 case=baseline_case,
             )
             print_status(result)
@@ -341,7 +346,7 @@ def main() -> int:
             print(f"Evaluating {adversarial_case.id}...")
             result = evaluate_adversarial_case(
                 client=client,
-                workspace_slug=workspace_slug,
+                workspace_slug=workspace.slug,
                 case=adversarial_case,
             )
             print_status(result)
@@ -402,10 +407,10 @@ def main() -> int:
         else:
             exit_code = 0
     finally:
-        if workspace_slug is not None:
+        if workspace is not None:
             print()
-            print(f"Cleaning up workspace: {workspace_slug}")
-            cleanup_workspace(client, workspace_slug)
+            print(f"Cleaning up workspace: {workspace.slug}")
+            cleanup_workspace(client, workspace)
 
     return exit_code
 

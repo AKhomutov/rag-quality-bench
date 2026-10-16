@@ -239,6 +239,32 @@ class AnythingLLMClient:
         )
         response.raise_for_status()
 
+    def delete_documents(self, document_locations: list[str]) -> None:
+        """Permanently remove uploaded documents from the AnythingLLM document library.
+
+        Uses DELETE /api/v1/system/remove-documents with the ``location`` values
+        returned by /api/v1/document/upload.
+        """
+        if not document_locations:
+            return
+
+        body: dict[str, list[str]] = {
+            "names": document_locations,
+        }
+        response = self.session.delete(
+            f"{self.base_url}/api/v1/system/remove-documents",
+            json=body,
+            timeout=120,
+        )
+        response.raise_for_status()
+
+        raw: object = response.json()
+        payload = _validate_json_object(raw)
+        success = payload.get("success")
+        if success is not True:
+            msg = f"document delete failed for {document_locations!r}: {payload!r}"
+            raise RuntimeError(msg)
+
     def create_thread(self, workspace_slug: str, thread_slug: str) -> str:
         body: dict[str, str] = {
             "name": thread_slug,

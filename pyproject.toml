@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "rag-quality-bench"
 version = "0.1.0"
-description = "Baseline RAG quality checks against AnythingLLM"
+description = "RAG and agent quality evaluation harness for AnythingLLM"
 requires-python = ">=3.12"
 dependencies = [
   "requests>=2.32",
@@ -14,8 +14,22 @@ dependencies = [
   "pytest>=8.0",
 ]
 
+[tool.setuptools]
+package-dir = {"" = "src"}
+py-modules = [
+  "run_evaluations",
+  "workspace_setup",
+  "rag_cases",
+  "adversarial_cases",
+  "conflicting_cases",
+  "agent_cases",
+  "evaluation_results",
+  "evaluation_assertions",
+]
+
 [tool.setuptools.packages.find]
 where = ["src"]
+include = ["clients*", "evaluators*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

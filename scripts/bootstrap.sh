@@ -35,7 +35,7 @@ normalize_digest() {
 
 read_lock_value() {
   local expr="$1"
-  python3 - "$LOCK_FILE" "$expr" <<'PY'
+  "$PYTHON" - "$LOCK_FILE" "$expr" <<'PY'
 import re
 import sys
 from pathlib import Path
@@ -97,7 +97,7 @@ PY
 }
 
 actual_python_version() {
-  python -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}")'
+  "$PYTHON" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}")'
 }
 
 actual_ollama_version() {
@@ -112,10 +112,9 @@ actual_ollama_version() {
 
 model_digest() {
   local model="$1"
-  python3 - "$OLLAMA_HOST" "$model" <<'PY'
+  "$PYTHON" - "$OLLAMA_HOST" "$model" <<'PY'
 import json
 import sys
-import urllib.error
 import urllib.request
 
 host = sys.argv[1].rstrip("/")
@@ -180,19 +179,16 @@ prepare_storage() {
     info "Creating ${STORAGE_ENV} from template"
     cp "$ENV_TEMPLATE" "$STORAGE_ENV"
     {
-      echo "SIG_KEY='$(python3 -c 'import secrets; print(secrets.token_hex(32))')'"
-      echo "SIG_SALT='$(python3 -c 'import secrets; print(secrets.token_hex(32))')'"
+      echo "SIG_KEY='$("$PYTHON" -c 'import secrets; print(secrets.token_hex(32))')'"
+      echo "SIG_SALT='$("$PYTHON" -c 'import secrets; print(secrets.token_hex(32))')'"
     } >>"$STORAGE_ENV"
-    echo "NOTE: Create an AnythingLLM API key in the UI once, then put it in repo-root .env"
   else
     info "Keeping existing AnythingLLM storage env: ${STORAGE_ENV}"
   fi
 
-  if [[ ! -f "${ROOT}/.env" ]]; then
-    if [[ -f "${ROOT}/.env.example" ]]; then
-      cp "${ROOT}/.env.example" "${ROOT}/.env"
-      echo "NOTE: Created .env from .env.example — set ANYTHINGLLM_API_KEY before running evals"
-    fi
+  if [[ ! -f "${ROOT}/.env" && -f "${ROOT}/.env.example" ]]; then
+    cp "${ROOT}/.env.example" "${ROOT}/.env"
+    echo "NOTE: Created .env from .env.example — set ANYTHINGLLM_API_KEY after starting AnythingLLM"
   fi
 }
 
@@ -207,17 +203,19 @@ require_cmd ollama
 require_cmd docker
 docker compose version >/dev/null 2>&1 || die "required command not found: docker compose"
 
+PYTHON="$(command -v python)"
+
 EXPECTED_PYTHON="$(tr -d '[:space:]' <"$PYTHON_VERSION_FILE")"
 LOCK_PYTHON="$(read_lock_value 'data["python"]')"
 [[ "$EXPECTED_PYTHON" == "$LOCK_PYTHON" ]] || die ".python-version (${EXPECTED_PYTHON}) != environment.lock (${LOCK_PYTHON})"
 
 ACTUAL_PYTHON="$(actual_python_version)"
 [[ "$ACTUAL_PYTHON" == "$EXPECTED_PYTHON" ]] || die "exact Python ${EXPECTED_PYTHON} required, found ${ACTUAL_PYTHON}"
-info "Python OK: ${ACTUAL_PYTHON}"
+info "Python OK: ${ACTUAL_PYTHON} (${PYTHON})"
 
 if [[ ! -d "${ROOT}/.venv" ]]; then
   info "Creating .venv"
-  python -m venv "${ROOT}/.venv"
+  "$PYTHON" -m venv "${ROOT}/.venv"
 else
   info "Reusing existing .venv"
 fi
@@ -228,16 +226,17 @@ VENV_VERSION="$("$VENV_PY" -c 'import sys; print(f"{sys.version_info.major}.{sys
 
 info "Installing locked Python dependencies"
 "$VENV_PY" -m pip install -r "$REQUIREMENTS_LOCK"
-"$VENV_PY" -m pip install -e "${ROOT}" --no-deps
+"$VENV_PY" -m pip install -e "${ROOT}" --no-deps --no-build-isolation
 
 EXPECTED_OLLAMA="$(read_lock_value 'data["ollama"]["version"]')"
 ACTUAL_OLLAMA="$(actual_ollama_version)"
 [[ "$ACTUAL_OLLAMA" == "$EXPECTED_OLLAMA" ]] || die "Ollama ${EXPECTED_OLLAMA} required, found ${ACTUAL_OLLAMA}"
 info "Ollama OK: ${ACTUAL_OLLAMA}"
 
-if ! python3 - "$OLLAMA_HOST" <<'PY'
+if ! "$PYTHON" - "$OLLAMA_HOST" <<'PY'
 import sys
 import urllib.request
+
 host = sys.argv[1].rstrip("/")
 urllib.request.urlopen(f"{host}/api/tags", timeout=5)
 PY
@@ -265,7 +264,7 @@ mkdir -p "${ROOT}/reports"
 
 info "Bootstrap complete"
 echo "Next:"
-echo "  1. Ensure ANYTHINGLLM_API_KEY is set in .env (create once in AnythingLLM UI if needed)"
-echo "  2. ./scripts/start.sh"
+echo "  1. ./scripts/start.sh"
+echo "  2. Complete first-time AnythingLLM setup if needed, create an API key, add it to .env"
 echo "  3. ./scripts/verify-env.sh"
 echo "  4. ./scripts/run-evals.sh"

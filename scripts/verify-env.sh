@@ -6,6 +6,7 @@ cd "$ROOT"
 
 LOCK_FILE="${ROOT}/infra/environment.lock"
 COMPOSE_FILE="${ROOT}/infra/anythingllm/docker-compose.yml"
+STORAGE_ENV="${ROOT}/infra/anythingllm/storage/.env"
 PYTHON_VERSION_FILE="${ROOT}/.python-version"
 OLLAMA_HOST="${OLLAMA_HOST:-http://localhost:11434}"
 ANYTHINGLLM_BASE_URL="${ANYTHINGLLM_BASE_URL:-http://localhost:3001}"
@@ -24,17 +25,35 @@ require_file() {
   [[ -f "$path" ]] || die "missing required file: $path"
 }
 
+command_exists() {
+  command -v "$1" >/dev/null 2>&1
+}
+
+resolve_python() {
+  if [[ -x "${ROOT}/.venv/bin/python" ]]; then
+    printf '%s\n' "${ROOT}/.venv/bin/python"
+    return 0
+  fi
+  if command_exists python; then
+    command -v python
+    return 0
+  fi
+  die "required command not found: python"
+}
+
 normalize_digest() {
   local value="$1"
   value="${value#sha256:}"
   printf 'sha256:%s\n' "$value"
 }
 
+compose() {
+  docker compose -f "$COMPOSE_FILE" --project-directory "$(dirname "$COMPOSE_FILE")" "$@"
+}
+
 read_lock_value() {
-  # Usage: read_lock_value <python-expression-using-data-dict>
   local expr="$1"
-  python3 - "$LOCK_FILE" "$expr" <<'PY'
-import ast
+  "$PYTHON" - "$LOCK_FILE" "$expr" <<'PY'
 import re
 import sys
 from pathlib import Path
@@ -91,11 +110,7 @@ for raw_line in text.splitlines():
         data["anythingllm"]["digest"] = m.group(1)
         continue
 
-value = eval(expr, {"__builtins__": {}}, {"data": data})  # noqa: S307
-if isinstance(value, str):
-    print(value)
-else:
-    print(ast.literal_eval(repr(value)))
+print(eval(expr, {"__builtins__": {}}, {"data": data}))  # noqa: S307
 PY
 }
 
@@ -117,20 +132,8 @@ print_check() {
   echo
 }
 
-command_exists() {
-  command -v "$1" >/dev/null 2>&1
-}
-
 actual_python_version() {
-  local py_bin
-  if [[ -x "${ROOT}/.venv/bin/python" ]]; then
-    py_bin="${ROOT}/.venv/bin/python"
-  elif command_exists python; then
-    py_bin="python"
-  else
-    py_bin="python3"
-  fi
-  "$py_bin" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}")'
+  "$PYTHON" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}")'
 }
 
 actual_ollama_version() {
@@ -145,7 +148,7 @@ actual_ollama_version() {
 
 actual_model_digest() {
   local model="$1"
-  python3 - "$OLLAMA_HOST" "$model" <<'PY'
+  "$PYTHON" - "$OLLAMA_HOST" "$model" <<'PY'
 import json
 import sys
 import urllib.error
@@ -180,19 +183,26 @@ compose_image_ref() {
   printf '%s\n' "$line"
 }
 
+compose_anythingllm_id() {
+  compose ps -q anythingllm 2>/dev/null || true
+}
+
 running_anythingllm_image() {
-  if ! docker inspect anythingllm >/dev/null 2>&1; then
+  local container_id
+  container_id="$(compose_anythingllm_id)"
+  if [[ -z "$container_id" ]]; then
     echo "not-running"
     return 0
   fi
 
-  python3 - <<'PY'
+  "$PYTHON" - "$container_id" <<'PY'
 import json
 import subprocess
 import sys
 
+container_id = sys.argv[1]
 proc = subprocess.run(
-    ["docker", "inspect", "anythingllm"],
+    ["docker", "inspect", container_id],
     check=False,
     capture_output=True,
     text=True,
@@ -205,7 +215,6 @@ info = json.loads(proc.stdout)[0]
 image_id = info.get("Image", "")
 config_image = info.get("Config", {}).get("Image", "")
 
-# Prefer RepoDigests from the image object for an immutable reference.
 img = subprocess.run(
     ["docker", "image", "inspect", image_id],
     check=False,
@@ -233,9 +242,8 @@ PY
 
 api_reachable() {
   local url="$1"
-  python3 - "$url" <<'PY'
+  "$PYTHON" - "$url" <<'PY'
 import sys
-import urllib.error
 import urllib.request
 
 url = sys.argv[1]
@@ -247,9 +255,56 @@ except Exception:
 PY
 }
 
+anythingllm_ollama_base_path() {
+  [[ -f "$STORAGE_ENV" ]] || {
+    echo ""
+    return 0
+  }
+  "$PYTHON" - "$STORAGE_ENV" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+text = Path(sys.argv[1]).read_text(encoding="utf-8")
+match = re.search(r"^OLLAMA_BASE_PATH=(.*)$", text, flags=re.MULTILINE)
+if not match:
+    print("")
+    raise SystemExit(0)
+print(match.group(1).strip().strip("'").strip('"'))
+PY
+}
+
+check_container_ollama_connectivity() {
+  local container_id
+  local ollama_base
+
+  container_id="$(compose_anythingllm_id)"
+  if [[ -z "$container_id" ]]; then
+    echo "  AnythingLLM → Ollama: SKIP (stack not running)"
+    return 0
+  fi
+
+  ollama_base="$(anythingllm_ollama_base_path)"
+  if [[ -z "$ollama_base" ]]; then
+    echo "  AnythingLLM → Ollama: FAIL (OLLAMA_BASE_PATH missing in storage .env)"
+    FAIL_COUNT=$((FAIL_COUNT + 1))
+    return 0
+  fi
+
+  if docker exec "$container_id" curl -fsS --max-time 5 "${ollama_base%/}/api/tags" >/dev/null; then
+    echo "  AnythingLLM → Ollama (${ollama_base}): PASS"
+  else
+    echo "  AnythingLLM → Ollama (${ollama_base}): FAIL"
+    echo "    Ollama must listen on an address reachable from Docker (e.g. 0.0.0.0:11434)."
+    FAIL_COUNT=$((FAIL_COUNT + 1))
+  fi
+}
+
 require_file "$LOCK_FILE"
 require_file "$COMPOSE_FILE"
 require_file "$PYTHON_VERSION_FILE"
+
+PYTHON="$(resolve_python)"
 
 EXPECTED_PYTHON="$(read_lock_value 'data["python"]')"
 EXPECTED_OLLAMA="$(read_lock_value 'data["ollama"]["version"]')"
@@ -265,7 +320,6 @@ FILE_PYTHON="$(tr -d '[:space:]' <"$PYTHON_VERSION_FILE")"
 echo "Environment verification"
 echo
 
-# Tooling availability
 echo "Tooling"
 for cmd in python ollama docker; do
   if command_exists "$cmd"; then
@@ -316,7 +370,6 @@ elif [[ "$RUNNING_REF" == "not-running" ]]; then
   echo "  runtime check:  SKIP"
 else
   echo "  runtime image:  ${RUNNING_REF}"
-  # Accept either full repo digest ref or image@digest matching lock.
   if [[ "$RUNNING_REF" == "$EXPECTED_ALLM_REF" || "$RUNNING_REF" == *"${EXPECTED_ALLM_DIGEST}" ]]; then
     echo "  runtime check:  PASS"
   else
@@ -336,8 +389,10 @@ fi
 
 if [[ "$VERIFY_SKIP_ANYTHINGLLM_RUNTIME" == "1" ]]; then
   echo "  AnythingLLM API: SKIP (startup in progress)"
+  echo "  AnythingLLM → Ollama: SKIP (startup in progress)"
 elif [[ "$RUNNING_REF" == "not-running" ]]; then
   echo "  AnythingLLM API: SKIP (stack not running)"
+  echo "  AnythingLLM → Ollama: SKIP (stack not running)"
 else
   if api_reachable "${ANYTHINGLLM_BASE_URL}/api/v1/system/ping"; then
     echo "  AnythingLLM API (${ANYTHINGLLM_BASE_URL}): PASS"
@@ -345,6 +400,7 @@ else
     echo "  AnythingLLM API (${ANYTHINGLLM_BASE_URL}): FAIL"
     FAIL_COUNT=$((FAIL_COUNT + 1))
   fi
+  check_container_ollama_connectivity
 fi
 echo
 

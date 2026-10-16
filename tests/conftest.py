@@ -9,11 +9,11 @@ from workspace_setup import STANDARD_DOCUMENTS, cleanup_workspace, prepare_works
 @pytest.fixture(scope="session")
 def workspace_slug() -> Generator[str, None, None]:
     client = AnythingLLMClient()
-    slug = prepare_workspace(
+    workspace = prepare_workspace(
         client,
         STANDARD_DOCUMENTS,
     )
     try:
-        yield slug
+        yield workspace.slug
     finally:
-        cleanup_workspace(client, slug)
+        cleanup_workspace(client, workspace)

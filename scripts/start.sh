@@ -20,8 +20,18 @@ info() {
   echo "==> $*"
 }
 
+require_cmd() {
+  local cmd="$1"
+  command -v "$cmd" >/dev/null 2>&1 || die "required command not found: ${cmd}"
+}
+
 compose() {
   docker compose -f "$COMPOSE_FILE" --project-directory "$(dirname "$COMPOSE_FILE")" "$@"
+}
+
+resolve_python() {
+  require_cmd python
+  command -v python
 }
 
 wait_for_url() {
@@ -31,7 +41,7 @@ wait_for_url() {
 
   info "Waiting for ${name} readiness (${url}), timeout ${READY_TIMEOUT_SECONDS}s"
   while (( elapsed < READY_TIMEOUT_SECONDS )); do
-    if python3 - "$url" <<'PY'
+    if "$PYTHON" - "$url" <<'PY'
 import sys
 import urllib.request
 
@@ -54,7 +64,7 @@ PY
 }
 
 ensure_ollama() {
-  if python3 - "$OLLAMA_HOST" <<'PY'
+  if "$PYTHON" - "$OLLAMA_HOST" <<'PY'
 import sys
 import urllib.request
 
@@ -78,36 +88,61 @@ PY
 Start the Ollama service yourself (this script will not invoke sudo), then retry."
 }
 
-remove_foreign_anythingllm_container() {
-  if ! docker inspect anythingllm >/dev/null 2>&1; then
-    return 0
+anythingllm_ollama_base_path() {
+  local path
+  path="$(
+    "$PYTHON" - "$STORAGE_ENV" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+text = Path(sys.argv[1]).read_text(encoding="utf-8")
+match = re.search(r"^OLLAMA_BASE_PATH=(.*)$", text, flags=re.MULTILINE)
+if not match:
+    raise SystemExit("OLLAMA_BASE_PATH missing from AnythingLLM storage .env")
+value = match.group(1).strip().strip("'").strip('"')
+print(value)
+PY
+  )" || die "failed to read OLLAMA_BASE_PATH from ${STORAGE_ENV}"
+  printf '%s\n' "$path"
+}
+
+verify_container_ollama_connectivity() {
+  local container_id
+  local ollama_base
+
+  container_id="$(compose ps -q anythingllm)"
+  [[ -n "$container_id" ]] || die "AnythingLLM compose service is not running"
+
+  ollama_base="$(anythingllm_ollama_base_path)"
+  info "Checking AnythingLLM → Ollama connectivity (${ollama_base})"
+
+  if ! docker exec "$container_id" curl -fsS --max-time 5 "${ollama_base%/}/api/tags" >/dev/null; then
+    die "AnythingLLM container cannot reach Ollama at ${ollama_base}.
+Ensure Ollama listens on an address reachable from Docker (for example 0.0.0.0:11434),
+and that OLLAMA_BASE_PATH in infra/anythingllm/storage/.env matches that path.
+This script will not change system-wide Ollama or systemd configuration."
   fi
 
-  local project
-  project="$(docker inspect anythingllm --format '{{index .Config.Labels "com.docker.compose.project"}}' 2>/dev/null || true)"
-  if [[ "$project" == "rag-quality-bench" ]]; then
-    return 0
-  fi
-
-  info "Removing existing non-compose AnythingLLM container so compose can manage it"
-  docker stop anythingllm >/dev/null
-  docker rm anythingllm >/dev/null
+  info "AnythingLLM → Ollama connectivity OK"
 }
 
 [[ -f "$COMPOSE_FILE" ]] || die "missing ${COMPOSE_FILE}"
 [[ -f "$STORAGE_ENV" ]] || die "missing ${STORAGE_ENV}. Run ./scripts/bootstrap.sh first."
 
+PYTHON="$(resolve_python)"
+
 info "Verifying environment contract (AnythingLLM runtime skipped until stack is up)"
 VERIFY_SKIP_ANYTHINGLLM_RUNTIME=1 "${ROOT}/scripts/verify-env.sh"
 
 ensure_ollama
-remove_foreign_anythingllm_container
 
 info "Starting AnythingLLM via docker compose"
 compose up -d
 
 wait_for_url "Ollama" "${OLLAMA_HOST}/api/tags"
 wait_for_url "AnythingLLM" "${ANYTHINGLLM_BASE_URL}/api/v1/system/ping"
+verify_container_ollama_connectivity
 
 info "Running final environment verification"
 "${ROOT}/scripts/verify-env.sh"
