@@ -22,6 +22,19 @@ class ChatResponse:
     sources: list[Source]
 
 
+@dataclass(frozen=True)
+class AgentToolCall:
+    name: str
+
+
+@dataclass(frozen=True)
+class AgentChatResponse:
+    text_response: str
+    final_answer: str
+    thoughts: list[str]
+    tool_calls: list[AgentToolCall]
+
+
 def _extract_final_answer(text_response: str) -> str:
     marker = "</think>"
     if marker in text_response:
@@ -74,6 +87,58 @@ def _parse_chat_response(raw: object) -> ChatResponse:
         text_response=text_response,
         final_answer=_extract_final_answer(text_response),
         sources=sources,
+    )
+
+
+def _parse_thoughts(value: object) -> list[str]:
+    if not isinstance(value, list):
+        msg = f"expected thoughts list, got {type(value).__name__}"
+        raise TypeError(msg)
+
+    thoughts: list[str] = []
+    for item in cast(list[object], value):
+        if not isinstance(item, str):
+            msg = f"expected string thoughts items, got {type(item).__name__}"
+            raise TypeError(msg)
+        thoughts.append(item)
+    return thoughts
+
+
+def _extract_tool_calls_from_thoughts(thoughts: list[str]) -> list[AgentToolCall]:
+    """Parse AnythingLLM agent thought lines of the form:
+
+    @agent is executing `tool-name` tool { ... }
+    """
+    marker_prefix = "@agent is executing `"
+    marker_suffix = "` tool"
+    tool_calls: list[AgentToolCall] = []
+
+    for thought in thoughts:
+        start = thought.find(marker_prefix)
+        if start == -1:
+            continue
+        after_prefix = thought[start + len(marker_prefix) :]
+        end = after_prefix.find(marker_suffix)
+        if end == -1:
+            continue
+        tool_name = after_prefix[:end]
+        if tool_name == "":
+            continue
+        tool_calls.append(AgentToolCall(name=tool_name))
+
+    return tool_calls
+
+
+def _parse_agent_chat_response(raw: object) -> AgentChatResponse:
+    payload = _validate_json_object(raw)
+    text_response = _get_required_string(payload, "textResponse")
+    thoughts = _parse_thoughts(payload.get("thoughts"))
+    tool_calls = _extract_tool_calls_from_thoughts(thoughts)
+    return AgentChatResponse(
+        text_response=text_response,
+        final_answer=_extract_final_answer(text_response),
+        thoughts=thoughts,
+        tool_calls=tool_calls,
     )
 
 
@@ -224,3 +289,26 @@ class AnythingLLMClient:
         response.raise_for_status()
         raw: object = response.json()
         return _parse_chat_response(raw)
+
+    def agent_chat(
+        self,
+        workspace_slug: str,
+        message: str,
+    ) -> AgentChatResponse:
+        if message.startswith("@agent"):
+            agent_message = message
+        else:
+            agent_message = f"@agent {message}"
+
+        body: dict[str, str] = {
+            "message": agent_message,
+            "mode": "chat",
+        }
+        response = self.session.post(
+            f"{self.base_url}/api/v1/workspace/{workspace_slug}/chat",
+            json=body,
+            timeout=300,
+        )
+        response.raise_for_status()
+        raw: object = response.json()
+        return _parse_agent_chat_response(raw)

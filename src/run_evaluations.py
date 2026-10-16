@@ -2,10 +2,12 @@ import json
 from pathlib import Path
 
 from adversarial_cases import load_adversarial_cases
+from agent_cases import load_agent_tool_selection_cases
 from clients.anythingllm_client import AnythingLLMClient
 from conflicting_cases import load_conflicting_evidence_cases
 from evaluation_results import EvaluationResult
 from evaluators.adversarial_evaluator import evaluate_adversarial_case
+from evaluators.agent_tool_selection_evaluator import evaluate_agent_tool_selection_case
 from evaluators.baseline_evaluator import evaluate_rag_case
 from evaluators.conflicting_evidence_evaluator import evaluate_conflicting_evidence_case
 from rag_cases import load_rag_cases
@@ -15,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 BASELINE_CASES_PATH = ROOT / "fixtures" / "datasets" / "rag_cases.yaml"
 ADVERSARIAL_CASES_PATH = ROOT / "fixtures" / "datasets" / "adversarial_conversations.yaml"
 CONFLICTING_CASES_PATH = ROOT / "fixtures" / "datasets" / "conflicting_evidence.yaml"
+AGENT_CASES_PATH = ROOT / "fixtures" / "datasets" / "agent_tool_selection.yaml"
 REPORTS_DIR = ROOT / "reports"
 JSON_REPORT_PATH = REPORTS_DIR / "evaluation_report.json"
 MARKDOWN_REPORT_PATH = REPORTS_DIR / "evaluation_report.md"
@@ -114,6 +117,7 @@ def result_to_json_object(result: EvaluationResult) -> dict[str, object]:
         "failure_description": result.failure_description,
         "failures": result.failures,
         "final_answer": result.final_answer,
+        "tools_used": result.tools_used,
     }
 
 
@@ -160,6 +164,12 @@ def append_result_section(sections: list[str], result: EvaluationResult) -> None
     sections.append("")
     sections.append(f"**Expected behavior:** {result.expected_behavior}")
     sections.append("")
+
+    if result.tools_used:
+        sections.append("**Tools used:**")
+        for tool_name in result.tools_used:
+            sections.append(f"- {tool_name}")
+        sections.append("")
 
     if not result.passed:
         sections.append(f"**Failure classification:** {result.failure_description}")
@@ -303,6 +313,19 @@ def main() -> int:
             result = evaluate_conflicting_evidence_case(
                 client=client,
                 case=conflicting_case,
+            )
+            print_status(result)
+            results.append(result)
+
+        print()
+        print("Agent tool-selection evaluations")
+        print("--------------------------------")
+        agent_cases = load_agent_tool_selection_cases(AGENT_CASES_PATH)
+        for agent_case in agent_cases:
+            print(f"Evaluating {agent_case.id}...")
+            result = evaluate_agent_tool_selection_case(
+                client=client,
+                case=agent_case,
             )
             print_status(result)
             results.append(result)

@@ -1,0 +1,19 @@
+cases:
+  - id: prefer_workspace_rag_over_web
+    category: "agent_tool_selection"
+    expected_behavior: "Prefer authoritative workspace evidence over external web search when the embedded corpus directly answers the user's question."
+    failure_description: "The agent uses external web browsing instead of the authoritative embedded workspace source."
+
+    documents:
+      - "acme_support_policy.md"
+
+    question: "How long are customer application logs retained by default?"
+
+    expected_answer_contains_any:
+      - "30 days"
+
+    forbidden_tools:
+      - "web-browsing"
+
+    preferred_tools:
+      - "rag-memory"

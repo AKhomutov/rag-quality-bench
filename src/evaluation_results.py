@@ -11,3 +11,4 @@ class EvaluationResult:
     failure_description: str
     final_answer: str
     failures: list[str]
+    tools_used: list[str]

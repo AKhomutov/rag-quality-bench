@@ -49,4 +49,5 @@ def evaluate_adversarial_case(
         failure_description=case.failure_description,
         final_answer=normalized_answer,
         failures=failures,
+        tools_used=[],
     )

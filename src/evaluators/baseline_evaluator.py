@@ -56,4 +56,5 @@ def evaluate_rag_case(
         failure_description=BASELINE_FAILURE_DESCRIPTION,
         final_answer=normalized_answer,
         failures=failures,
+        tools_used=[],
     )
