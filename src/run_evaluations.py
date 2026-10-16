@@ -1,5 +1,4 @@
 import json
-import os
 from pathlib import Path
 
 from adversarial_cases import load_adversarial_cases
@@ -8,6 +7,7 @@ from evaluation_results import EvaluationResult
 from evaluators.adversarial_evaluator import evaluate_adversarial_case
 from evaluators.baseline_evaluator import evaluate_rag_case
 from rag_cases import load_rag_cases
+from workspace_setup import STANDARD_DOCUMENTS, cleanup_workspace, prepare_workspace
 
 ROOT = Path(__file__).resolve().parents[1]
 BASELINE_CASES_PATH = ROOT / "fixtures" / "datasets" / "rag_cases.yaml"
@@ -237,65 +237,82 @@ def print_status(result: EvaluationResult) -> None:
 
 def main() -> int:
     client = AnythingLLMClient()
-    workspace_slug = os.environ["ANYTHINGLLM_WORKSPACE"]
+    workspace_slug: str | None = None
+    exit_code = 1
 
-    results: list[EvaluationResult] = []
+    try:
+        print("Preparing temporary workspace...")
+        workspace_slug = prepare_workspace(client, STANDARD_DOCUMENTS)
+        print(f"Workspace ready: {workspace_slug}")
+        print()
 
-    print("Baseline evaluations")
-    print("--------------------")
-    baseline_cases = load_rag_cases(BASELINE_CASES_PATH)
-    for baseline_case in baseline_cases:
-        print(f"Evaluating {baseline_case.id}...")
-        result = evaluate_rag_case(
-            client=client,
-            workspace_slug=workspace_slug,
-            case=baseline_case,
-        )
-        print_status(result)
-        results.append(result)
+        results: list[EvaluationResult] = []
 
-    print()
-    print("Adversarial evaluations")
-    print("-----------------------")
-    adversarial_cases = load_adversarial_cases(ADVERSARIAL_CASES_PATH)
-    for adversarial_case in adversarial_cases:
-        print(f"Evaluating {adversarial_case.id}...")
-        result = evaluate_adversarial_case(
-            client=client,
-            workspace_slug=workspace_slug,
-            case=adversarial_case,
-        )
-        print_status(result)
-        results.append(result)
+        print("Baseline evaluations")
+        print("--------------------")
+        baseline_cases = load_rag_cases(BASELINE_CASES_PATH)
+        for baseline_case in baseline_cases:
+            print(f"Evaluating {baseline_case.id}...")
+            result = evaluate_rag_case(
+                client=client,
+                workspace_slug=workspace_slug,
+                case=baseline_case,
+            )
+            print_status(result)
+            results.append(result)
 
-    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
-    write_json_report(JSON_REPORT_PATH, results)
-    write_markdown_report(MARKDOWN_REPORT_PATH, results)
+        print()
+        print("Adversarial evaluations")
+        print("-----------------------")
+        adversarial_cases = load_adversarial_cases(ADVERSARIAL_CASES_PATH)
+        for adversarial_case in adversarial_cases:
+            print(f"Evaluating {adversarial_case.id}...")
+            result = evaluate_adversarial_case(
+                client=client,
+                workspace_slug=workspace_slug,
+                case=adversarial_case,
+            )
+            print_status(result)
+            results.append(result)
 
-    baseline_stats = count_suite_stats(results, "baseline")
-    adversarial_stats = count_suite_stats(results, "adversarial")
-    passed_count = count_passed(results)
-    failed_count = len(results) - passed_count
+        REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+        write_json_report(JSON_REPORT_PATH, results)
+        write_markdown_report(MARKDOWN_REPORT_PATH, results)
 
-    print()
-    print(f"baseline:    {baseline_stats['passed']} passed / {baseline_stats['failed']} failed")
-    print(
-        f"adversarial: {adversarial_stats['passed']} passed / {adversarial_stats['failed']} failed"
-    )
-    print(f"overall:     {passed_count} passed / {failed_count} failed")
-    print("categories:")
-    categories = collect_categories(results)
-    for category in categories:
-        category_stats = count_category_stats(results, category)
+        baseline_stats = count_suite_stats(results, "baseline")
+        adversarial_stats = count_suite_stats(results, "adversarial")
+        passed_count = count_passed(results)
+        failed_count = len(results) - passed_count
+
+        print()
+        print(f"baseline:    {baseline_stats['passed']} passed / {baseline_stats['failed']} failed")
         print(
-            f"  {category}: {category_stats['passed']} passed / {category_stats['failed']} failed"
+            f"adversarial: {adversarial_stats['passed']} passed / "
+            f"{adversarial_stats['failed']} failed"
         )
-    print(f"Wrote {JSON_REPORT_PATH}")
-    print(f"Wrote {MARKDOWN_REPORT_PATH}")
+        print(f"overall:     {passed_count} passed / {failed_count} failed")
+        print("categories:")
+        categories = collect_categories(results)
+        for category in categories:
+            category_stats = count_category_stats(results, category)
+            print(
+                f"  {category}: "
+                f"{category_stats['passed']} passed / {category_stats['failed']} failed"
+            )
+        print(f"Wrote {JSON_REPORT_PATH}")
+        print(f"Wrote {MARKDOWN_REPORT_PATH}")
 
-    if failed_count > 0:
-        return 1
-    return 0
+        if failed_count > 0:
+            exit_code = 1
+        else:
+            exit_code = 0
+    finally:
+        if workspace_slug is not None:
+            print()
+            print(f"Cleaning up workspace: {workspace_slug}")
+            cleanup_workspace(client, workspace_slug)
+
+    return exit_code
 
 
 if __name__ == "__main__":

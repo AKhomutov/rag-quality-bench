@@ -1,4 +1,3 @@
-import os
 from pathlib import Path
 
 import pytest
@@ -20,9 +19,8 @@ for case in RAG_CASES:
     RAG_CASES,
     ids=RAG_CASE_IDS,
 )
-def test_rag_case(case: RagCase) -> None:
+def test_rag_case(case: RagCase, workspace_slug: str) -> None:
     client = AnythingLLMClient()
-    workspace_slug = os.environ["ANYTHINGLLM_WORKSPACE"]
 
     result = evaluate_rag_case(
         client=client,

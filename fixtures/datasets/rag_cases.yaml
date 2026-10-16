@@ -50,6 +50,7 @@ cases:
       - "does not define"
       - "does not classify"
       - "not defined"
+      - "no mention of a Severity 5"
     expected_source_contains: "Acme Cloud classifies incidents into four severity levels."
 
   - id: false_support_hours

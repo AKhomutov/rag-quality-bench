@@ -1,5 +1,6 @@
 import os
 from dataclasses import dataclass
+from pathlib import Path
 from typing import cast
 
 import requests
@@ -88,6 +89,90 @@ class AnythingLLMClient:
                 "Content-Type": "application/json",
             }
         )
+
+    def create_workspace(self, name: str, slug: str) -> str:
+        body: dict[str, str] = {
+            "name": name,
+            "slug": slug,
+        }
+        response = self.session.post(
+            f"{self.base_url}/api/v1/workspace/new",
+            json=body,
+            timeout=60,
+        )
+        response.raise_for_status()
+
+        raw: object = response.json()
+        payload = _validate_json_object(raw)
+        workspace_raw = payload.get("workspace")
+        workspace = _validate_json_object(workspace_raw)
+        return _get_required_string(workspace, "slug")
+
+    def delete_workspace(self, workspace_slug: str) -> None:
+        response = self.session.delete(
+            f"{self.base_url}/api/v1/workspace/{workspace_slug}",
+            timeout=60,
+        )
+        response.raise_for_status()
+
+    def update_workspace(
+        self,
+        workspace_slug: str,
+        chat_provider: str,
+        chat_model: str,
+    ) -> None:
+        body: dict[str, str] = {
+            "chatProvider": chat_provider,
+            "chatModel": chat_model,
+        }
+        response = self.session.post(
+            f"{self.base_url}/api/v1/workspace/{workspace_slug}/update",
+            json=body,
+            timeout=60,
+        )
+        response.raise_for_status()
+
+    def upload_document(self, path: Path) -> str:
+        with path.open("rb") as file_handle:
+            response = self.session.post(
+                f"{self.base_url}/api/v1/document/upload",
+                files={"file": (path.name, file_handle, "text/markdown")},
+                headers={"Content-Type": None},
+                timeout=120,
+            )
+        response.raise_for_status()
+
+        raw: object = response.json()
+        payload = _validate_json_object(raw)
+
+        success = payload.get("success")
+        if success is not True:
+            error = payload.get("error")
+            msg = f"document upload failed for {path.name!r}: {error!r}"
+            raise RuntimeError(msg)
+
+        documents_raw = payload.get("documents")
+        if not isinstance(documents_raw, list) or len(documents_raw) == 0:
+            msg = f"document upload returned no documents for {path.name!r}: {payload!r}"
+            raise RuntimeError(msg)
+
+        first_document = _validate_json_object(cast(list[object], documents_raw)[0])
+        return _get_required_string(first_document, "location")
+
+    def add_document_to_workspace(
+        self,
+        workspace_slug: str,
+        document_location: str,
+    ) -> None:
+        body: dict[str, list[str]] = {
+            "adds": [document_location],
+        }
+        response = self.session.post(
+            f"{self.base_url}/api/v1/workspace/{workspace_slug}/update-embeddings",
+            json=body,
+            timeout=180,
+        )
+        response.raise_for_status()
 
     def create_thread(self, workspace_slug: str, thread_slug: str) -> str:
         body: dict[str, str] = {

@@ -1,4 +1,3 @@
-import os
 from pathlib import Path
 
 import pytest
@@ -20,9 +19,8 @@ for case in ADVERSARIAL_CASES:
     ADVERSARIAL_CASES,
     ids=ADVERSARIAL_CASE_IDS,
 )
-def test_adversarial_conversation(case: AdversarialCase) -> None:
+def test_adversarial_conversation(case: AdversarialCase, workspace_slug: str) -> None:
     client = AnythingLLMClient()
-    workspace_slug = os.environ["ANYTHINGLLM_WORKSPACE"]
 
     result = evaluate_adversarial_case(
         client=client,

@@ -91,9 +91,3 @@ Enterprise customers may request a custom rate limit.
 Requests that exceed the configured limit return HTTP status code 429.
 
 Rate-limit counters reset continuously and are not based on fixed clock-minute boundaries.
-
-## Data Export
-
-Workspace administrators may request a complete export of workspace data.
-
-Exports
