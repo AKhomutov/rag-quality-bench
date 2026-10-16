@@ -1,0 +1,60 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rag-quality-bench"
+version = "0.1.0"
+description = "Baseline RAG quality checks against AnythingLLM"
+requires-python = ">=3.12"
+dependencies = [
+  "requests>=2.32",
+  "python-dotenv>=1.0",
+  "PyYAML>=6.0",
+  "pytest>=8.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-ra"
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = [
+    "E",     # pycodestyle errors
+    "F",     # pyflakes
+    "I",     # import sorting
+    "B",     # bugbear
+    "UP",    # pyupgrade
+    "SIM",   # simplifications
+    "RUF",   # Ruff-specific checks
+    "ANN",   # type annotations
+]
+ignore = ["SIM110"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.pyright]
+pythonVersion = "3.12"
+extraPaths = ["src"]
+venvPath = "."
+venv = ".venv"
+
+[tool.mypy]
+python_version = "3.12"
+mypy_path = "src"
+explicit_package_bases = true
+strict = true
+warn_unreachable = true
+
+disallow_any_explicit = true
+disallow_any_expr = true
+disallow_any_unimported = true

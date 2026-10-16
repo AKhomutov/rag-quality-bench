@@ -1,0 +1,20 @@
+cases:
+  - id: log_retention_default
+    question: "How long are customer application logs retained by default?"
+    expected_answer_contains: "30 days"
+    expected_source_contains: "Customer application logs are retained for 30 days by default."
+
+  - id: api_rate_limit
+    question: "What happens when a workspace exceeds the standard API rate limit?"
+    expected_answer_contains: "429"
+    expected_source_contains: "Requests that exceed the configured limit return HTTP status code 429."
+
+  - id: severity_one_response
+    question: "What is the initial response target for a Severity 1 incident?"
+    expected_answer_contains: "30 minutes"
+    expected_source_contains: "The initial response target for Severity 1 incidents is 30 minutes."
+
+  - id: renewal_refund
+    question: "Are subscription renewals eligible for refunds?"
+    expected_answer_contains: "not eligible"
+    expected_source_contains: "Subscription renewals are not eligible for refunds."
