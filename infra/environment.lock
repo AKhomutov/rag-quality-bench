@@ -1,0 +1,17 @@
+# Benchmark environment contract — observed from a working local stack.
+# Do not auto-update digests to match a different installed environment.
+
+python: "3.14.7"
+
+ollama:
+  version: "0.40.5"
+
+models:
+  qwen3:8b:
+    digest: "sha256:500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41"
+  nomic-embed-text:latest:
+    digest: "sha256:0a109f422b47e3a30ba2b10eca18548e944e8a23073ee3f3e947efcf3c45e59f"
+
+anythingllm:
+  image: "mintplexlabs/anythingllm"
+  digest: "sha256:2d8c94fcc5bbc2bd905abfc18cb83038d01def1a1be89238151be2e103b35f5b"
