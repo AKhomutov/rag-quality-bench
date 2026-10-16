@@ -3,15 +3,18 @@ from pathlib import Path
 
 from adversarial_cases import load_adversarial_cases
 from clients.anythingllm_client import AnythingLLMClient
+from conflicting_cases import load_conflicting_evidence_cases
 from evaluation_results import EvaluationResult
 from evaluators.adversarial_evaluator import evaluate_adversarial_case
 from evaluators.baseline_evaluator import evaluate_rag_case
+from evaluators.conflicting_evidence_evaluator import evaluate_conflicting_evidence_case
 from rag_cases import load_rag_cases
 from workspace_setup import STANDARD_DOCUMENTS, cleanup_workspace, prepare_workspace
 
 ROOT = Path(__file__).resolve().parents[1]
 BASELINE_CASES_PATH = ROOT / "fixtures" / "datasets" / "rag_cases.yaml"
 ADVERSARIAL_CASES_PATH = ROOT / "fixtures" / "datasets" / "adversarial_conversations.yaml"
+CONFLICTING_CASES_PATH = ROOT / "fixtures" / "datasets" / "conflicting_evidence.yaml"
 REPORTS_DIR = ROOT / "reports"
 JSON_REPORT_PATH = REPORTS_DIR / "evaluation_report.json"
 MARKDOWN_REPORT_PATH = REPORTS_DIR / "evaluation_report.md"
@@ -68,12 +71,37 @@ def collect_categories(results: list[EvaluationResult]) -> list[str]:
     return categories
 
 
+def collect_suites(results: list[EvaluationResult]) -> list[str]:
+    suites: list[str] = []
+    for result in results:
+        if result.suite not in suites:
+            suites.append(result.suite)
+    return suites
+
+
 def build_categories_payload(results: list[EvaluationResult]) -> dict[str, object]:
     categories_data: dict[str, object] = {}
     categories = collect_categories(results)
     for category in categories:
         categories_data[category] = count_category_stats(results, category)
     return categories_data
+
+
+def build_suites_payload(results: list[EvaluationResult]) -> dict[str, object]:
+    suites_data: dict[str, object] = {}
+    suites = collect_suites(results)
+    for suite in suites:
+        suites_data[suite] = count_suite_stats(results, suite)
+    return suites_data
+
+
+def format_suite_label(suite: str) -> str:
+    parts: list[str] = []
+    for part in suite.split("_"):
+        if not part:
+            continue
+        parts.append(part[:1].upper() + part[1:])
+    return " ".join(parts)
 
 
 def result_to_json_object(result: EvaluationResult) -> dict[str, object]:
@@ -103,10 +131,7 @@ def build_json_payload(results: list[EvaluationResult]) -> dict[str, object]:
             "passed": passed_count,
             "failed": failed_count,
         },
-        "suites": {
-            "baseline": count_suite_stats(results, "baseline"),
-            "adversarial": count_suite_stats(results, "adversarial"),
-        },
+        "suites": build_suites_payload(results),
         "categories": build_categories_payload(results),
         "results": results_data,
     }
@@ -161,10 +186,9 @@ def filter_results_by_suite(
 
 
 def build_markdown_report(results: list[EvaluationResult]) -> str:
-    baseline_stats = count_suite_stats(results, "baseline")
-    adversarial_stats = count_suite_stats(results, "adversarial")
     overall_passed = count_passed(results)
     overall_failed = len(results) - overall_passed
+    suites = collect_suites(results)
 
     sections: list[str] = [
         "# RAG Quality Evaluation Report",
@@ -173,21 +197,23 @@ def build_markdown_report(results: list[EvaluationResult]) -> str:
         "",
         "| Suite | Total | Passed | Failed |",
         "| --- | ---: | ---: | ---: |",
-        (
-            f"| Baseline | {baseline_stats['total']} | "
-            f"{baseline_stats['passed']} | {baseline_stats['failed']} |"
-        ),
-        (
-            f"| Adversarial | {adversarial_stats['total']} | "
-            f"{adversarial_stats['passed']} | {adversarial_stats['failed']} |"
-        ),
-        f"| **Overall** | **{len(results)}** | **{overall_passed}** | **{overall_failed}** |",
-        "",
-        "## Category Breakdown",
-        "",
-        "| Category | Total | Passed | Failed |",
-        "| --- | ---: | ---: | ---: |",
     ]
+
+    for suite in suites:
+        suite_stats = count_suite_stats(results, suite)
+        sections.append(
+            f"| {format_suite_label(suite)} | {suite_stats['total']} | "
+            f"{suite_stats['passed']} | {suite_stats['failed']} |"
+        )
+
+    sections.append(
+        f"| **Overall** | **{len(results)}** | **{overall_passed}** | **{overall_failed}** |"
+    )
+    sections.append("")
+    sections.append("## Category Breakdown")
+    sections.append("")
+    sections.append("| Category | Total | Passed | Failed |")
+    sections.append("| --- | ---: | ---: | ---: |")
 
     categories = collect_categories(results)
     for category in categories:
@@ -197,20 +223,13 @@ def build_markdown_report(results: list[EvaluationResult]) -> str:
             f"{category_stats['passed']} | {category_stats['failed']} |"
         )
 
-    sections.append("")
-    sections.append("## Baseline Results")
-    sections.append("")
-
-    baseline_results = filter_results_by_suite(results, "baseline")
-    for result in baseline_results:
-        append_result_section(sections, result)
-
-    sections.append("## Adversarial Results")
-    sections.append("")
-
-    adversarial_results = filter_results_by_suite(results, "adversarial")
-    for result in adversarial_results:
-        append_result_section(sections, result)
+    for suite in suites:
+        sections.append("")
+        sections.append(f"## {format_suite_label(suite)} Results")
+        sections.append("")
+        suite_results = filter_results_by_suite(results, suite)
+        for result in suite_results:
+            append_result_section(sections, result)
 
     return "\n".join(sections)
 
@@ -275,22 +294,32 @@ def main() -> int:
             print_status(result)
             results.append(result)
 
+        print()
+        print("Conflicting evidence evaluations")
+        print("--------------------------------")
+        conflicting_cases = load_conflicting_evidence_cases(CONFLICTING_CASES_PATH)
+        for conflicting_case in conflicting_cases:
+            print(f"Evaluating {conflicting_case.id}...")
+            result = evaluate_conflicting_evidence_case(
+                client=client,
+                case=conflicting_case,
+            )
+            print_status(result)
+            results.append(result)
+
         REPORTS_DIR.mkdir(parents=True, exist_ok=True)
         write_json_report(JSON_REPORT_PATH, results)
         write_markdown_report(MARKDOWN_REPORT_PATH, results)
 
-        baseline_stats = count_suite_stats(results, "baseline")
-        adversarial_stats = count_suite_stats(results, "adversarial")
         passed_count = count_passed(results)
         failed_count = len(results) - passed_count
 
         print()
-        print(f"baseline:    {baseline_stats['passed']} passed / {baseline_stats['failed']} failed")
-        print(
-            f"adversarial: {adversarial_stats['passed']} passed / "
-            f"{adversarial_stats['failed']} failed"
-        )
-        print(f"overall:     {passed_count} passed / {failed_count} failed")
+        suites = collect_suites(results)
+        for suite in suites:
+            suite_stats = count_suite_stats(results, suite)
+            print(f"{suite}: {suite_stats['passed']} passed / {suite_stats['failed']} failed")
+        print(f"overall: {passed_count} passed / {failed_count} failed")
         print("categories:")
         categories = collect_categories(results)
         for category in categories:

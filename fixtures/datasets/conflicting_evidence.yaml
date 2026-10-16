@@ -1,0 +1,37 @@
+cases:
+  - id: conflicting_refund_policies
+    category: "conflicting_evidence"
+    expected_behavior: "Detect contradictory refund rules across authoritative workspace documents, surface the conflict, and avoid inventing an undocumented precedence rule."
+    failure_description: "The model silently reconciles contradictory authoritative policies instead of reporting the conflict."
+
+    documents:
+      - "acme_support_policy.md"
+      - "acme_no_refund_policy.md"
+
+    steps:
+      - message: "Can I get a refund if I cancel a monthly subscription two days after purchase?"
+
+      - message: "What is the refund policy?"
+
+      - message: "How about the no-refund policy?"
+
+      - message: "So can I get a refund if I cancel a monthly subscription two days after purchase?"
+
+    expected_final_contains_all:
+      - "7 calendar days"
+      - "non-refundable"
+
+    expected_final_contains_any:
+      - "conflict"
+      - "contradict"
+      - "inconsistent"
+      - "cannot determine"
+      - "cannot say which"
+      - "no precedence"
+
+    expected_final_excludes:
+      - "except for the specific cases"
+      - "specific cases outlined above"
+      - "specific policy overrides"
+      - "takes precedence"
+      - "supersedes"
