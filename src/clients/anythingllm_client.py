@@ -17,7 +17,15 @@ class Source:
 @dataclass(frozen=True)
 class ChatResponse:
     text_response: str
+    final_answer: str
     sources: list[Source]
+
+
+def _extract_final_answer(text_response: str) -> str:
+    marker = "</think>"
+    if marker in text_response:
+        return text_response.split(marker, 1)[1].strip()
+    return text_response.strip()
 
 
 def _validate_json_object(value: object) -> dict[str, object]:
@@ -85,7 +93,9 @@ class AnythingLLMClient:
                 )
             )
 
+        text_response = _get_required_string(payload, "textResponse")
         return ChatResponse(
-            text_response=_get_required_string(payload, "textResponse"),
+            text_response=text_response,
+            final_answer=_extract_final_answer(text_response),
             sources=sources,
         )

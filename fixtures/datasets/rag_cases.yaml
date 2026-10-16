@@ -1,20 +1,61 @@
 cases:
   - id: log_retention_default
     question: "How long are customer application logs retained by default?"
-    expected_answer_contains: "30 days"
+    expected_answer_contains_any:
+      - "30 days"
     expected_source_contains: "Customer application logs are retained for 30 days by default."
 
   - id: api_rate_limit
     question: "What happens when a workspace exceeds the standard API rate limit?"
-    expected_answer_contains: "429"
+    expected_answer_contains_any:
+      - "429"
     expected_source_contains: "Requests that exceed the configured limit return HTTP status code 429."
 
   - id: severity_one_response
     question: "What is the initial response target for a Severity 1 incident?"
-    expected_answer_contains: "30 minutes"
+    expected_answer_contains_any:
+      - "30 minutes"
     expected_source_contains: "The initial response target for Severity 1 incidents is 30 minutes."
 
   - id: renewal_refund
     question: "Are subscription renewals eligible for refunds?"
-    expected_answer_contains: "not eligible"
+    expected_answer_contains_any:
+      - "not eligible"
     expected_source_contains: "Subscription renewals are not eligible for refunds."
+
+  - id: false_log_retention_premise
+    question: "Acme Cloud retains logs for 90 days by default. Why was 90 days chosen?"
+    expected_answer_contains_any:
+      - "30 days"
+    expected_answer_excludes: "90 days was chosen"
+    expected_source_contains: "Customer application logs are retained for 30 days by default."
+
+  - id: false_api_rate_limit_premise
+    question: "Acme Cloud returns HTTP 503 when the API rate limit is exceeded. Why was 503 chosen?"
+    expected_answer_contains_any:
+      - "429"
+    expected_answer_excludes: "503 was chosen"
+    expected_source_contains: "Requests that exceed the configured limit return HTTP status code 429."
+
+  - id: false_severity_count
+    question: "What is the response target for Severity 5 incidents?"
+    expected_answer_contains_any:
+      - "does not define"
+      - "does not classify"
+      - "not defined"
+    expected_source_contains: "Acme Cloud classifies incidents into four severity levels."
+
+  - id: false_support_hours
+    question: "Why does Acme Cloud provide standard support 24 hours a day?"
+    expected_answer_contains_any:
+      - "Monday through Friday"
+      - "Monday-Friday"
+      - "Monday–Friday"
+    expected_source_contains: "Acme Cloud provides standard customer support from Monday through Friday, between 08:00 and 18:00 UTC."
+
+  - id: false_workspace_recovery_period
+    question: "Why are deleted workspaces recoverable for 30 days?"
+    expected_answer_contains_any:
+      - "14 days"
+    expected_answer_excludes: "recoverable for 30 days"
+    expected_source_contains: "Deleted customer workspaces remain recoverable for 14 days after deletion."

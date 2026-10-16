@@ -17,6 +17,10 @@ def contains_source_text(sources: list[Source], expected_text: str) -> bool:
     return False
 
 
+def normalize_answer_text(text: str) -> str:
+    return text.replace("**", "")
+
+
 @pytest.mark.parametrize(
     "case",
     RAG_CASES,
@@ -30,8 +34,11 @@ def test_rag_case(case: RagCase) -> None:
         message=case.question,
     )
 
-    assert case.expected_answer_contains in response.text_response
+    normalized_answer = normalize_answer_text(response.final_answer)
+    assert any(expected in normalized_answer for expected in case.expected_answer_contains_any)
     assert contains_source_text(
         response.sources,
         case.expected_source_contains,
     )
+    if case.expected_answer_excludes is not None:
+        assert case.expected_answer_excludes not in normalized_answer

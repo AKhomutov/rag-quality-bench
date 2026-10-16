@@ -9,8 +9,22 @@ import yaml
 class RagCase:
     id: str
     question: str
-    expected_answer_contains: str
+    expected_answer_contains_any: list[str]
     expected_source_contains: str
+    expected_answer_excludes: str | None
+
+
+def _get_optional_string(mapping: dict[str, object], key: str) -> str | None:
+    value = mapping.get(key)
+
+    if value is None:
+        return None
+
+    if not isinstance(value, str):
+        msg = f"expected string field {key!r}, got {type(value).__name__}"
+        raise TypeError(msg)
+
+    return value
 
 
 def _validate_yaml_object(value: object) -> dict[str, object]:
@@ -51,6 +65,19 @@ def _get_required_list(mapping: dict[str, object], key: str) -> list[object]:
     return cast(list[object], value)
 
 
+def _get_required_string_list(mapping: dict[str, object], key: str) -> list[str]:
+    value = _get_required_list(mapping, key)
+    result: list[str] = []
+
+    for item in value:
+        if not isinstance(item, str):
+            msg = f"expected string items in {key!r}, got {type(item).__name__}"
+            raise TypeError(msg)
+        result.append(item)
+
+    return result
+
+
 def load_rag_cases(path: Path) -> list[RagCase]:
     with path.open(encoding="utf-8") as file:
         raw = cast(object, yaml.safe_load(file))
@@ -66,13 +93,17 @@ def load_rag_cases(path: Path) -> list[RagCase]:
         case = RagCase(
             id=_get_required_string(case_data, "id"),
             question=_get_required_string(case_data, "question"),
-            expected_answer_contains=_get_required_string(
+            expected_answer_contains_any=_get_required_string_list(
                 case_data,
-                "expected_answer_contains",
+                "expected_answer_contains_any",
             ),
             expected_source_contains=_get_required_string(
                 case_data,
                 "expected_source_contains",
+            ),
+            expected_answer_excludes=_get_optional_string(
+                case_data,
+                "expected_answer_excludes",
             ),
         )
 
