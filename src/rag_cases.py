@@ -10,7 +10,7 @@ class RagCase:
     id: str
     question: str
     expected_answer_contains_any: list[str]
-    expected_source_contains: str
+    expected_source_contains: str | None
     expected_answer_excludes: str | None
 
 
@@ -97,7 +97,7 @@ def load_rag_cases(path: Path) -> list[RagCase]:
                 case_data,
                 "expected_answer_contains_any",
             ),
-            expected_source_contains=_get_required_string(
+            expected_source_contains=_get_optional_string(
                 case_data,
                 "expected_source_contains",
             ),

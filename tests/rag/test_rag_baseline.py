@@ -36,9 +36,10 @@ def test_rag_case(case: RagCase) -> None:
 
     normalized_answer = normalize_answer_text(response.final_answer)
     assert any(expected in normalized_answer for expected in case.expected_answer_contains_any)
-    assert contains_source_text(
-        response.sources,
-        case.expected_source_contains,
-    )
+    if case.expected_source_contains is not None:
+        assert contains_source_text(
+            response.sources,
+            case.expected_source_contains,
+        )
     if case.expected_answer_excludes is not None:
         assert case.expected_answer_excludes not in normalized_answer

@@ -59,3 +59,21 @@ cases:
       - "14 days"
     expected_answer_excludes: "recoverable for 30 days"
     expected_source_contains: "Deleted customer workspaces remain recoverable for 14 days after deletion."
+
+  - id: unanswerable_database_engine
+    question: "Which database engine does Acme Cloud use in production?"
+    expected_answer_contains_any:
+      - "not specified"
+      - "does not specify"
+      - "not provided"
+      - "cannot determine"
+      - "not available"
+
+  - id: unanswerable_primary_cloud_region
+    question: "What is Acme Cloud's primary production region?"
+    expected_answer_contains_any:
+      - "not specified"
+      - "does not specify"
+      - "not provided"
+      - "cannot determine"
+      - "not available"
