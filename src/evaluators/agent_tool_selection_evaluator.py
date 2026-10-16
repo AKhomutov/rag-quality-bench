@@ -1,12 +1,21 @@
+from dataclasses import dataclass
 from pathlib import Path
 
 from agent_cases import AgentToolSelectionCase
 from clients.anythingllm_client import AnythingLLMClient
-from evaluation_results import EvaluationResult
+from evaluation_results import EvaluationResult, TrialSummary
 from evaluators.evaluation_utils import contains_any_expected, normalize_answer_text
 from workspace_setup import PROJECT_ROOT, cleanup_workspace, prepare_workspace
 
 DOCUMENTS_DIR = PROJECT_ROOT / "fixtures" / "documents"
+
+
+@dataclass(frozen=True)
+class AgentTrialResult:
+    passed: bool
+    final_answer: str
+    failures: list[str]
+    tools_used: list[str]
 
 
 def resolve_case_documents(case: AgentToolSelectionCase) -> list[Path]:
@@ -34,11 +43,19 @@ def any_preferred_tool_used(tools_used: list[str], preferred_tools: list[str]) -
     return False
 
 
-def evaluate_agent_tool_selection_case(
+def unique_tools(tools_used: list[str]) -> list[str]:
+    unique: list[str] = []
+    for tool_name in tools_used:
+        if tool_name not in unique:
+            unique.append(tool_name)
+    return unique
+
+
+def run_agent_trial(
     client: AnythingLLMClient,
+    documents: list[Path],
     case: AgentToolSelectionCase,
-) -> EvaluationResult:
-    documents = resolve_case_documents(case)
+) -> AgentTrialResult:
     workspace_slug: str | None = None
 
     try:
@@ -68,13 +85,8 @@ def evaluate_agent_tool_selection_case(
         ):
             failures.append("expected workspace/RAG tool was not used")
 
-        return EvaluationResult(
-            suite="agent_tool_selection",
-            case_id=case.id,
-            category=case.category,
+        return AgentTrialResult(
             passed=len(failures) == 0,
-            expected_behavior=case.expected_behavior,
-            failure_description=case.failure_description,
             final_answer=normalized_answer,
             failures=failures,
             tools_used=tools_used,
@@ -82,3 +94,75 @@ def evaluate_agent_tool_selection_case(
     finally:
         if workspace_slug is not None:
             cleanup_workspace(client, workspace_slug)
+
+
+def evaluate_agent_tool_selection_case(
+    client: AnythingLLMClient,
+    case: AgentToolSelectionCase,
+) -> EvaluationResult:
+    documents = resolve_case_documents(case)
+
+    trial_results: list[AgentTrialResult] = []
+    for _trial_number in range(case.trials):
+        trial_results.append(
+            run_agent_trial(
+                client=client,
+                documents=documents,
+                case=case,
+            )
+        )
+
+    total_trials = len(trial_results)
+    passed_trials = 0
+    for trial in trial_results:
+        if trial.passed:
+            passed_trials += 1
+    failed_trials = total_trials - passed_trials
+    pass_rate = passed_trials / total_trials
+
+    tool_usage: dict[str, int] = {}
+    tools_seen_order: list[str] = []
+    for trial in trial_results:
+        for tool_name in unique_tools(trial.tools_used):
+            if tool_name not in tool_usage:
+                tool_usage[tool_name] = 0
+                tools_seen_order.append(tool_name)
+            tool_usage[tool_name] = tool_usage[tool_name] + 1
+
+    case_passed = pass_rate >= case.minimum_pass_rate
+
+    failures: list[str] = []
+    if not case_passed:
+        failures.append(
+            f"pass rate {pass_rate:.2f} is below required minimum {case.minimum_pass_rate:.2f}"
+        )
+        failures.append(f"{failed_trials}/{total_trials} trials failed")
+
+        trial_number = 1
+        for trial in trial_results:
+            if not trial.passed:
+                for failure in trial.failures:
+                    failures.append(f"trial {trial_number}: {failure}")
+            trial_number += 1
+
+    trial_summary = TrialSummary(
+        total=total_trials,
+        passed=passed_trials,
+        failed=failed_trials,
+        pass_rate=pass_rate,
+        minimum_pass_rate=case.minimum_pass_rate,
+        tool_usage=tool_usage,
+    )
+
+    return EvaluationResult(
+        suite="agent_tool_selection",
+        case_id=case.id,
+        category=case.category,
+        passed=case_passed,
+        expected_behavior=case.expected_behavior,
+        failure_description=case.failure_description,
+        final_answer=(f"Repeated agent evaluation: {passed_trials}/{total_trials} trials passed."),
+        failures=failures,
+        tools_used=tools_seen_order,
+        trial_summary=trial_summary,
+    )

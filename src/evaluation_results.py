@@ -2,6 +2,16 @@ from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
+class TrialSummary:
+    total: int
+    passed: int
+    failed: int
+    pass_rate: float
+    minimum_pass_rate: float
+    tool_usage: dict[str, int]
+
+
+@dataclass(frozen=True)
 class EvaluationResult:
     suite: str
     case_id: str
@@ -12,3 +22,4 @@ class EvaluationResult:
     final_answer: str
     failures: list[str]
     tools_used: list[str]
+    trial_summary: TrialSummary | None

@@ -5,7 +5,7 @@ from adversarial_cases import load_adversarial_cases
 from agent_cases import load_agent_tool_selection_cases
 from clients.anythingllm_client import AnythingLLMClient
 from conflicting_cases import load_conflicting_evidence_cases
-from evaluation_results import EvaluationResult
+from evaluation_results import EvaluationResult, TrialSummary
 from evaluators.adversarial_evaluator import evaluate_adversarial_case
 from evaluators.agent_tool_selection_evaluator import evaluate_agent_tool_selection_case
 from evaluators.baseline_evaluator import evaluate_rag_case
@@ -107,6 +107,20 @@ def format_suite_label(suite: str) -> str:
     return " ".join(parts)
 
 
+def trial_summary_to_json_object(summary: TrialSummary | None) -> dict[str, object] | None:
+    if summary is None:
+        return None
+
+    return {
+        "total": summary.total,
+        "passed": summary.passed,
+        "failed": summary.failed,
+        "pass_rate": summary.pass_rate,
+        "minimum_pass_rate": summary.minimum_pass_rate,
+        "tool_usage": summary.tool_usage,
+    }
+
+
 def result_to_json_object(result: EvaluationResult) -> dict[str, object]:
     return {
         "suite": result.suite,
@@ -118,6 +132,7 @@ def result_to_json_object(result: EvaluationResult) -> dict[str, object]:
         "failures": result.failures,
         "final_answer": result.final_answer,
         "tools_used": result.tools_used,
+        "trial_summary": trial_summary_to_json_object(result.trial_summary),
     }
 
 
@@ -165,7 +180,21 @@ def append_result_section(sections: list[str], result: EvaluationResult) -> None
     sections.append(f"**Expected behavior:** {result.expected_behavior}")
     sections.append("")
 
-    if result.tools_used:
+    if result.trial_summary is not None:
+        summary = result.trial_summary
+        pass_rate_pct = summary.pass_rate * 100.0
+        required_pct = summary.minimum_pass_rate * 100.0
+        sections.append(f"**Trials:** {summary.total}")
+        sections.append(f"**Passed trials:** {summary.passed}")
+        sections.append(f"**Failed trials:** {summary.failed}")
+        sections.append(f"**Pass rate:** {pass_rate_pct:.1f}%")
+        sections.append(f"**Required pass rate:** {required_pct:.1f}%")
+        sections.append("")
+        sections.append("**Tool selection by trial:**")
+        for tool_name, count in summary.tool_usage.items():
+            sections.append(f"- {tool_name}: {count}/{summary.total}")
+        sections.append("")
+    elif result.tools_used:
         sections.append("**Tools used:**")
         for tool_name in result.tools_used:
             sections.append(f"- {tool_name}")
@@ -262,6 +291,20 @@ def print_status(result: EvaluationResult) -> None:
     else:
         status = "FAIL"
     print(f"  {status}")
+
+    if result.trial_summary is None:
+        return
+
+    summary = result.trial_summary
+    pass_rate_pct = summary.pass_rate * 100.0
+    required_pct = summary.minimum_pass_rate * 100.0
+    print(
+        f"  trials: {summary.passed}/{summary.total} passed "
+        f"({pass_rate_pct:.1f}%, required {required_pct:.1f}%)"
+    )
+    print("  tools:")
+    for tool_name, count in summary.tool_usage.items():
+        print(f"    {tool_name}: {count}/{summary.total}")
 
 
 def main() -> int:

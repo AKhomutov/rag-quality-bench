@@ -16,6 +16,8 @@ class AgentToolSelectionCase:
     expected_answer_contains_any: list[str]
     forbidden_tools: list[str]
     preferred_tools: list[str]
+    trials: int
+    minimum_pass_rate: float
 
 
 def _validate_yaml_object(value: object) -> dict[str, object]:
@@ -69,6 +71,26 @@ def _get_required_string_list(mapping: dict[str, object], key: str) -> list[str]
     return result
 
 
+def _get_required_int(mapping: dict[str, object], key: str) -> int:
+    value = mapping.get(key)
+
+    if isinstance(value, bool) or not isinstance(value, int):
+        msg = f"expected int field {key!r}, got {type(value).__name__}"
+        raise TypeError(msg)
+
+    return value
+
+
+def _get_required_float(mapping: dict[str, object], key: str) -> float:
+    value = mapping.get(key)
+
+    if not isinstance(value, float):
+        msg = f"expected float field {key!r}, got {type(value).__name__}"
+        raise TypeError(msg)
+
+    return value
+
+
 def load_agent_tool_selection_cases(path: Path) -> list[AgentToolSelectionCase]:
     with path.open(encoding="utf-8") as file:
         raw = cast(object, yaml.safe_load(file))
@@ -86,6 +108,19 @@ def load_agent_tool_selection_cases(path: Path) -> list[AgentToolSelectionCase]:
             msg = f"case {case_data.get('id')!r} must declare at least one document"
             raise ValueError(msg)
 
+        trials = _get_required_int(case_data, "trials")
+        if trials < 1:
+            msg = f"case {case_data.get('id')!r}: trials must be >= 1, got {trials}"
+            raise ValueError(msg)
+
+        minimum_pass_rate = _get_required_float(case_data, "minimum_pass_rate")
+        if minimum_pass_rate < 0.0 or minimum_pass_rate > 1.0:
+            msg = (
+                f"case {case_data.get('id')!r}: minimum_pass_rate must be between "
+                f"0.0 and 1.0, got {minimum_pass_rate}"
+            )
+            raise ValueError(msg)
+
         case = AgentToolSelectionCase(
             id=_get_required_string(case_data, "id"),
             category=_get_required_string(case_data, "category"),
@@ -99,6 +134,8 @@ def load_agent_tool_selection_cases(path: Path) -> list[AgentToolSelectionCase]:
             ),
             forbidden_tools=_get_required_string_list(case_data, "forbidden_tools"),
             preferred_tools=_get_required_string_list(case_data, "preferred_tools"),
+            trials=trials,
+            minimum_pass_rate=minimum_pass_rate,
         )
         cases.append(case)
 

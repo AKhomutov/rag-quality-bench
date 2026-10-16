@@ -17,3 +17,6 @@ cases:
 
     preferred_tools:
       - "rag-memory"
+
+    trials: 10
+    minimum_pass_rate: 0.9

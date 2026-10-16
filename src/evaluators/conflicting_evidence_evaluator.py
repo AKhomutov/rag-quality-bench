@@ -70,6 +70,7 @@ def evaluate_conflicting_evidence_case(
             final_answer=normalized_answer,
             failures=failures,
             tools_used=[],
+            trial_summary=None,
         )
     finally:
         if workspace_slug is not None:

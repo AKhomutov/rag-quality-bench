@@ -50,4 +50,5 @@ def evaluate_adversarial_case(
         final_answer=normalized_answer,
         failures=failures,
         tools_used=[],
+        trial_summary=None,
     )
