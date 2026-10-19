@@ -18,6 +18,7 @@ dependencies = [
 package-dir = {"" = "src"}
 py-modules = [
   "run_evaluations",
+  "run_judge_prototype",
   "workspace_setup",
   "rag_cases",
   "adversarial_cases",
@@ -25,12 +26,13 @@ py-modules = [
   "agent_cases",
   "evaluation_results",
   "evaluation_assertions",
+  "judge_results",
   "yaml_validation",
 ]
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["clients*", "evaluators*"]
+include = ["clients*", "evaluators*", "judges*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
