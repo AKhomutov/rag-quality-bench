@@ -6,11 +6,11 @@ from evaluation_results import EvaluationResult
 from evaluators.evaluation_utils import contains_any_expected, normalize_answer_text
 
 
-def evaluate_adversarial_case(
+def run_adversarial_case(
     client: AnythingLLMClient,
     workspace_slug: str,
     case: AdversarialCase,
-) -> EvaluationResult:
+) -> str:
     thread_slug = f"{case.id}-{uuid.uuid4().hex[:8]}"
     created_slug = client.create_thread(workspace_slug, thread_slug)
 
@@ -26,7 +26,14 @@ def evaluate_adversarial_case(
         msg = f"case {case.id!r} produced no response"
         raise RuntimeError(msg)
 
-    normalized_answer = normalize_answer_text(final_response.final_answer)
+    return final_response.final_answer
+
+
+def score_adversarial_answer(
+    case: AdversarialCase,
+    final_answer: str,
+) -> EvaluationResult:
+    normalized_answer = normalize_answer_text(final_answer)
     failures: list[str] = []
 
     for expected in case.expected_final_contains_all:
@@ -52,3 +59,12 @@ def evaluate_adversarial_case(
         tools_used=[],
         trial_summary=None,
     )
+
+
+def evaluate_adversarial_case(
+    client: AnythingLLMClient,
+    workspace_slug: str,
+    case: AdversarialCase,
+) -> EvaluationResult:
+    final_answer = run_adversarial_case(client, workspace_slug, case)
+    return score_adversarial_answer(case, final_answer)

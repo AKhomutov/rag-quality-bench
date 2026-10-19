@@ -19,6 +19,9 @@ package-dir = {"" = "src"}
 py-modules = [
   "run_evaluations",
   "run_judge_prototype",
+  "run_judge_stability",
+  "judge_stability",
+  "judge_debug",
   "workspace_setup",
   "rag_cases",
   "adversarial_cases",
@@ -27,6 +30,7 @@ py-modules = [
   "evaluation_results",
   "evaluation_assertions",
   "judge_results",
+  "semantic_judge_specs",
   "yaml_validation",
 ]
 

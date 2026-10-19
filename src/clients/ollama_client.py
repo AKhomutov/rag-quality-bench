@@ -10,6 +10,7 @@ load_dotenv()
 
 DEFAULT_OLLAMA_HOST = "http://localhost:11434"
 JUDGE_MODEL = "qwen3:8b"
+JUDGE_TEMPERATURE = 0
 
 
 class OllamaClient:
@@ -18,7 +19,7 @@ class OllamaClient:
         self.base_url = host.rstrip("/")
 
     def generate(self, model: str, prompt: str) -> str:
-        options: dict[str, int] = {"temperature": 0}
+        options: dict[str, int] = {"temperature": JUDGE_TEMPERATURE}
         body: dict[str, object] = {
             "model": model,
             "prompt": prompt,

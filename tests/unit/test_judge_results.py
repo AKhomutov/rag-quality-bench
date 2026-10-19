@@ -1,25 +1,31 @@
 import pytest
 
-from judge_results import JudgeScore, parse_judge_score, total_score
+from judge_results import (
+    JudgeScore,
+    OracleComparison,
+    oracle_agrees,
+    parse_judge_score,
+    total_score,
+)
 
 
 def test_parse_judge_score_happy_path() -> None:
     text = """
     {
       "groundedness": 2,
-      "conflict_handling": 2,
-      "unsupported_precedence": 1,
+      "source_authority": 2,
+      "unsupported_reasoning": 1,
       "answer_correctness": 2,
-      "rationale": "Mostly solid conflict handling."
+      "rationale": "Mostly solid scoring."
     }
     """
     score = parse_judge_score(text)
     assert score == JudgeScore(
         groundedness=2,
-        conflict_handling=2,
-        unsupported_precedence=1,
+        source_authority=2,
+        unsupported_reasoning=1,
         answer_correctness=2,
-        rationale="Mostly solid conflict handling.",
+        rationale="Mostly solid scoring.",
     )
     assert total_score(score) == 7
 
@@ -28,8 +34,8 @@ def test_parse_judge_score_rejects_out_of_range() -> None:
     text = """
     {
       "groundedness": 3,
-      "conflict_handling": 2,
-      "unsupported_precedence": 1,
+      "source_authority": 2,
+      "unsupported_reasoning": 1,
       "answer_correctness": 2,
       "rationale": "bad range"
     }
@@ -47,8 +53,8 @@ def test_parse_judge_score_rejects_missing_fields() -> None:
     text = """
     {
       "groundedness": 1,
-      "conflict_handling": 1,
-      "unsupported_precedence": 1,
+      "source_authority": 1,
+      "unsupported_reasoning": 1,
       "rationale": "missing answer_correctness"
     }
     """
@@ -60,8 +66,8 @@ def test_parse_judge_score_rejects_bool_as_int() -> None:
     text = """
     {
       "groundedness": true,
-      "conflict_handling": 1,
-      "unsupported_precedence": 1,
+      "source_authority": 1,
+      "unsupported_reasoning": 1,
       "answer_correctness": 1,
       "rationale": "bool is not int"
     }
@@ -74,8 +80,8 @@ def test_parse_judge_score_rejects_string_number() -> None:
     text = """
     {
       "groundedness": "2",
-      "conflict_handling": 1,
-      "unsupported_precedence": 1,
+      "source_authority": 1,
+      "unsupported_reasoning": 1,
       "answer_correctness": 1,
       "rationale": "string number"
     }
@@ -88,8 +94,8 @@ def test_parse_judge_score_rejects_empty_rationale() -> None:
     text = """
     {
       "groundedness": 1,
-      "conflict_handling": 1,
-      "unsupported_precedence": 1,
+      "source_authority": 1,
+      "unsupported_reasoning": 1,
       "answer_correctness": 1,
       "rationale": "   "
     }
@@ -106,9 +112,33 @@ def test_parse_judge_score_rejects_non_object_root() -> None:
 def test_total_score() -> None:
     score = JudgeScore(
         groundedness=0,
-        conflict_handling=1,
-        unsupported_precedence=2,
+        source_authority=1,
+        unsupported_reasoning=2,
         answer_correctness=2,
         rationale="sum check",
     )
     assert total_score(score) == 5
+
+
+def test_oracle_agrees() -> None:
+    score = JudgeScore(
+        groundedness=2,
+        source_authority=2,
+        unsupported_reasoning=2,
+        answer_correctness=2,
+        rationale="ok",
+    )
+    agree = OracleComparison(
+        case_id="x",
+        deterministic_passed=True,
+        judge_score=score,
+        judge_passed=True,
+    )
+    disagree = OracleComparison(
+        case_id="y",
+        deterministic_passed=True,
+        judge_score=score,
+        judge_passed=False,
+    )
+    assert oracle_agrees(agree) is True
+    assert oracle_agrees(disagree) is False

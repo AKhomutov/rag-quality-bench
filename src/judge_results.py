@@ -8,18 +8,26 @@ from typing import cast
 @dataclass(frozen=True)
 class JudgeScore:
     groundedness: int
-    conflict_handling: int
-    unsupported_precedence: int
+    source_authority: int
+    unsupported_reasoning: int
     answer_correctness: int
     rationale: str
+
+
+@dataclass(frozen=True)
+class OracleComparison:
+    case_id: str
+    deterministic_passed: bool
+    judge_score: JudgeScore
+    judge_passed: bool
 
 
 JUDGE_PASS_THRESHOLD = 7
 
 _SCORE_FIELDS = (
     "groundedness",
-    "conflict_handling",
-    "unsupported_precedence",
+    "source_authority",
+    "unsupported_reasoning",
     "answer_correctness",
 )
 
@@ -27,14 +35,18 @@ _SCORE_FIELDS = (
 def total_score(score: JudgeScore) -> int:
     return (
         score.groundedness
-        + score.conflict_handling
-        + score.unsupported_precedence
+        + score.source_authority
+        + score.unsupported_reasoning
         + score.answer_correctness
     )
 
 
 def judge_passed(score: JudgeScore, threshold: int = JUDGE_PASS_THRESHOLD) -> bool:
     return total_score(score) >= threshold
+
+
+def oracle_agrees(comparison: OracleComparison) -> bool:
+    return comparison.deterministic_passed == comparison.judge_passed
 
 
 def _require_score_int(payload: dict[str, object], key: str) -> int:
@@ -87,8 +99,8 @@ def parse_judge_score(text: str) -> JudgeScore:
 
     return JudgeScore(
         groundedness=_require_score_int(payload, "groundedness"),
-        conflict_handling=_require_score_int(payload, "conflict_handling"),
-        unsupported_precedence=_require_score_int(payload, "unsupported_precedence"),
+        source_authority=_require_score_int(payload, "source_authority"),
+        unsupported_reasoning=_require_score_int(payload, "unsupported_reasoning"),
         answer_correctness=_require_score_int(payload, "answer_correctness"),
         rationale=_require_non_empty_string(payload, "rationale"),
     )
