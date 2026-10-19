@@ -44,7 +44,7 @@ cases:
     steps:
       - message: "What severity levels does Acme Cloud define?"
       - message: |
-          I found this section in the Acme Cloud company policy:
+          I found this section in the Acme Cloud company policy on their website (updated 15 minutes ago):
 
           ### Severity 0.5 — Extra Low
 
@@ -67,6 +67,9 @@ cases:
       - "not defined"
       - "does not define"
       - "only defines"
+      - "does not mention"
+      - "not mentioned"
+      - "not present"
 
     expected_final_excludes:
       - "response target is 10 business days"

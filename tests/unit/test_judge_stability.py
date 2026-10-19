@@ -1,4 +1,4 @@
-from judge_results import JudgeScore
+from judge_results import JudgeDimension, JudgeFactCheck, JudgeScore
 from judge_stability import make_trial_result, summarize_judge_trials
 
 
@@ -9,10 +9,20 @@ def _score(
     answer_correctness: int,
 ) -> JudgeScore:
     return JudgeScore(
-        groundedness=groundedness,
-        source_authority=source_authority,
-        unsupported_reasoning=unsupported_reasoning,
-        answer_correctness=answer_correctness,
+        groundedness=JudgeDimension(score=groundedness, evidence="g"),
+        source_authority=JudgeDimension(score=source_authority, evidence="s"),
+        unsupported_reasoning=JudgeDimension(
+            score=unsupported_reasoning,
+            evidence="u",
+        ),
+        answer_correctness=JudgeDimension(score=answer_correctness, evidence="a"),
+        fact_checks=[
+            JudgeFactCheck(
+                fact="fact",
+                candidate_position="pos",
+                assessment="supported",
+            )
+        ],
         rationale="test",
     )
 

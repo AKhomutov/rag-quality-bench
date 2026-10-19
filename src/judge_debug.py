@@ -5,7 +5,13 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from judge_results import JudgeScore
+from judge_results import (
+    JudgeDimension,
+    JudgeScore,
+    judge_passed,
+    parse_judge_score,
+    total_score,
+)
 
 
 @dataclass(frozen=True)
@@ -50,12 +56,29 @@ def case_trace_path(run_dir: Path, case_id: str) -> Path:
     return run_dir / f"{case_id}.jsonl"
 
 
-def _score_to_object(score: JudgeScore) -> dict[str, object]:
+def _dimension_to_object(dimension: JudgeDimension) -> dict[str, object]:
     return {
-        "groundedness": score.groundedness,
-        "source_authority": score.source_authority,
-        "unsupported_reasoning": score.unsupported_reasoning,
-        "answer_correctness": score.answer_correctness,
+        "score": dimension.score,
+        "evidence": dimension.evidence,
+    }
+
+
+def _score_to_object(score: JudgeScore) -> dict[str, object]:
+    fact_checks: list[dict[str, object]] = []
+    for check in score.fact_checks:
+        fact_checks.append(
+            {
+                "fact": check.fact,
+                "candidate_position": check.candidate_position,
+                "assessment": check.assessment,
+            }
+        )
+    return {
+        "groundedness": _dimension_to_object(score.groundedness),
+        "source_authority": _dimension_to_object(score.source_authority),
+        "unsupported_reasoning": _dimension_to_object(score.unsupported_reasoning),
+        "answer_correctness": _dimension_to_object(score.answer_correctness),
+        "fact_checks": fact_checks,
         "rationale": score.rationale,
     }
 
@@ -110,3 +133,63 @@ def append_judge_debug_trace(
     with path.open("a", encoding="utf-8") as file:
         file.write(line)
         file.write("\n")
+
+
+def parse_and_trace_judge_response(
+    *,
+    path: Path,
+    case_id: str,
+    trial_number: int | None,
+    candidate_answer: str,
+    reference_facts: list[str],
+    case_instruction: str | None,
+    prompt: str,
+    raw_response: str,
+    threshold: int,
+    model: str,
+    temperature: float,
+) -> JudgeScore:
+    try:
+        score = parse_judge_score(raw_response)
+    except (TypeError, ValueError) as exc:
+        append_judge_debug_trace(
+            path,
+            JudgeDebugErrorTrace(
+                case_id=case_id,
+                trial_number=trial_number,
+                candidate_answer=candidate_answer,
+                reference_facts=list(reference_facts),
+                case_instruction=case_instruction,
+                prompt=prompt,
+                raw_response=raw_response,
+                error=str(exc),
+                model=model,
+                temperature=temperature,
+            ),
+        )
+        msg = (
+            f"judge execution error for {case_id!r}"
+            f" trial={trial_number!r}: {exc}\n"
+            f"raw response:\n{raw_response}"
+        )
+        raise RuntimeError(msg) from exc
+
+    append_judge_debug_trace(
+        path,
+        JudgeDebugTrace(
+            case_id=case_id,
+            trial_number=trial_number,
+            candidate_answer=candidate_answer,
+            reference_facts=list(reference_facts),
+            case_instruction=case_instruction,
+            prompt=prompt,
+            raw_response=raw_response,
+            score=score,
+            total_score=total_score(score),
+            threshold=threshold,
+            passed=judge_passed(score, threshold),
+            model=model,
+            temperature=temperature,
+        ),
+    )
+    return score

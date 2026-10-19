@@ -1,6 +1,8 @@
 import pytest
 
 from judge_results import (
+    JudgeDimension,
+    JudgeFactCheck,
     JudgeScore,
     OracleComparison,
     oracle_agrees,
@@ -9,39 +11,72 @@ from judge_results import (
 )
 
 
-def test_parse_judge_score_happy_path() -> None:
-    text = """
-    {
-      "groundedness": 2,
-      "source_authority": 2,
-      "unsupported_reasoning": 1,
-      "answer_correctness": 2,
+def _valid_json(
+    *,
+    groundedness: int = 2,
+    source_authority: int = 2,
+    unsupported_reasoning: int = 1,
+    answer_correctness: int = 2,
+    assessment: str = "supported",
+) -> str:
+    return f"""
+    {{
+      "groundedness": {{
+        "score": {groundedness},
+        "evidence": "Groundedness evidence."
+      }},
+      "source_authority": {{
+        "score": {source_authority},
+        "evidence": "Source authority evidence."
+      }},
+      "unsupported_reasoning": {{
+        "score": {unsupported_reasoning},
+        "evidence": "Unsupported reasoning evidence."
+      }},
+      "answer_correctness": {{
+        "score": {answer_correctness},
+        "evidence": "Answer correctness evidence."
+      }},
+      "fact_checks": [
+        {{
+          "fact": "Severity 0.5 is not defined in the authoritative policy.",
+          "candidate_position": "Candidate rejects Severity 0.5.",
+          "assessment": "{assessment}"
+        }}
+      ],
       "rationale": "Mostly solid scoring."
-    }
+    }}
     """
-    score = parse_judge_score(text)
+
+
+def test_parse_judge_score_happy_path() -> None:
+    score = parse_judge_score(_valid_json())
     assert score == JudgeScore(
-        groundedness=2,
-        source_authority=2,
-        unsupported_reasoning=1,
-        answer_correctness=2,
+        groundedness=JudgeDimension(score=2, evidence="Groundedness evidence."),
+        source_authority=JudgeDimension(score=2, evidence="Source authority evidence."),
+        unsupported_reasoning=JudgeDimension(
+            score=1,
+            evidence="Unsupported reasoning evidence.",
+        ),
+        answer_correctness=JudgeDimension(
+            score=2,
+            evidence="Answer correctness evidence.",
+        ),
+        fact_checks=[
+            JudgeFactCheck(
+                fact="Severity 0.5 is not defined in the authoritative policy.",
+                candidate_position="Candidate rejects Severity 0.5.",
+                assessment="supported",
+            )
+        ],
         rationale="Mostly solid scoring.",
     )
     assert total_score(score) == 7
 
 
 def test_parse_judge_score_rejects_out_of_range() -> None:
-    text = """
-    {
-      "groundedness": 3,
-      "source_authority": 2,
-      "unsupported_reasoning": 1,
-      "answer_correctness": 2,
-      "rationale": "bad range"
-    }
-    """
     with pytest.raises(ValueError, match=r"0\.\.2"):
-        parse_judge_score(text)
+        parse_judge_score(_valid_json(groundedness=3))
 
 
 def test_parse_judge_score_rejects_invalid_json() -> None:
@@ -52,9 +87,16 @@ def test_parse_judge_score_rejects_invalid_json() -> None:
 def test_parse_judge_score_rejects_missing_fields() -> None:
     text = """
     {
-      "groundedness": 1,
-      "source_authority": 1,
-      "unsupported_reasoning": 1,
+      "groundedness": {"score": 1, "evidence": "ok"},
+      "source_authority": {"score": 1, "evidence": "ok"},
+      "unsupported_reasoning": {"score": 1, "evidence": "ok"},
+      "fact_checks": [
+        {
+          "fact": "A fact.",
+          "candidate_position": "Said nothing.",
+          "assessment": "not_addressed"
+        }
+      ],
       "rationale": "missing answer_correctness"
     }
     """
@@ -65,38 +107,79 @@ def test_parse_judge_score_rejects_missing_fields() -> None:
 def test_parse_judge_score_rejects_bool_as_int() -> None:
     text = """
     {
-      "groundedness": true,
-      "source_authority": 1,
-      "unsupported_reasoning": 1,
-      "answer_correctness": 1,
+      "groundedness": {"score": true, "evidence": "bad"},
+      "source_authority": {"score": 1, "evidence": "ok"},
+      "unsupported_reasoning": {"score": 1, "evidence": "ok"},
+      "answer_correctness": {"score": 1, "evidence": "ok"},
+      "fact_checks": [
+        {
+          "fact": "A fact.",
+          "candidate_position": "Said nothing.",
+          "assessment": "not_addressed"
+        }
+      ],
       "rationale": "bool is not int"
     }
     """
-    with pytest.raises(TypeError, match="groundedness"):
+    with pytest.raises(TypeError, match="score"):
         parse_judge_score(text)
 
 
-def test_parse_judge_score_rejects_string_number() -> None:
+def test_parse_judge_score_rejects_empty_evidence() -> None:
     text = """
     {
-      "groundedness": "2",
-      "source_authority": 1,
-      "unsupported_reasoning": 1,
-      "answer_correctness": 1,
-      "rationale": "string number"
+      "groundedness": {"score": 1, "evidence": "   "},
+      "source_authority": {"score": 1, "evidence": "ok"},
+      "unsupported_reasoning": {"score": 1, "evidence": "ok"},
+      "answer_correctness": {"score": 1, "evidence": "ok"},
+      "fact_checks": [
+        {
+          "fact": "A fact.",
+          "candidate_position": "Said nothing.",
+          "assessment": "not_addressed"
+        }
+      ],
+      "rationale": "empty evidence"
     }
     """
-    with pytest.raises(TypeError, match="groundedness"):
+    with pytest.raises(ValueError, match="evidence"):
         parse_judge_score(text)
+
+
+def test_parse_judge_score_rejects_empty_fact_checks() -> None:
+    text = """
+    {
+      "groundedness": {"score": 1, "evidence": "ok"},
+      "source_authority": {"score": 1, "evidence": "ok"},
+      "unsupported_reasoning": {"score": 1, "evidence": "ok"},
+      "answer_correctness": {"score": 1, "evidence": "ok"},
+      "fact_checks": [],
+      "rationale": "empty list"
+    }
+    """
+    with pytest.raises(ValueError, match="fact_checks"):
+        parse_judge_score(text)
+
+
+def test_parse_judge_score_rejects_invalid_assessment() -> None:
+    with pytest.raises(ValueError, match="assessment"):
+        parse_judge_score(_valid_json(assessment="maybe"))
 
 
 def test_parse_judge_score_rejects_empty_rationale() -> None:
     text = """
     {
-      "groundedness": 1,
-      "source_authority": 1,
-      "unsupported_reasoning": 1,
-      "answer_correctness": 1,
+      "groundedness": {"score": 1, "evidence": "ok"},
+      "source_authority": {"score": 1, "evidence": "ok"},
+      "unsupported_reasoning": {"score": 1, "evidence": "ok"},
+      "answer_correctness": {"score": 1, "evidence": "ok"},
+      "fact_checks": [
+        {
+          "fact": "A fact.",
+          "candidate_position": "Said nothing.",
+          "assessment": "not_addressed"
+        }
+      ],
       "rationale": "   "
     }
     """
@@ -111,10 +194,17 @@ def test_parse_judge_score_rejects_non_object_root() -> None:
 
 def test_total_score() -> None:
     score = JudgeScore(
-        groundedness=0,
-        source_authority=1,
-        unsupported_reasoning=2,
-        answer_correctness=2,
+        groundedness=JudgeDimension(score=0, evidence="g"),
+        source_authority=JudgeDimension(score=1, evidence="s"),
+        unsupported_reasoning=JudgeDimension(score=2, evidence="u"),
+        answer_correctness=JudgeDimension(score=2, evidence="a"),
+        fact_checks=[
+            JudgeFactCheck(
+                fact="fact",
+                candidate_position="pos",
+                assessment="supported",
+            )
+        ],
         rationale="sum check",
     )
     assert total_score(score) == 5
@@ -122,10 +212,17 @@ def test_total_score() -> None:
 
 def test_oracle_agrees() -> None:
     score = JudgeScore(
-        groundedness=2,
-        source_authority=2,
-        unsupported_reasoning=2,
-        answer_correctness=2,
+        groundedness=JudgeDimension(score=2, evidence="g"),
+        source_authority=JudgeDimension(score=2, evidence="s"),
+        unsupported_reasoning=JudgeDimension(score=2, evidence="u"),
+        answer_correctness=JudgeDimension(score=2, evidence="a"),
+        fact_checks=[
+            JudgeFactCheck(
+                fact="fact",
+                candidate_position="pos",
+                assessment="supported",
+            )
+        ],
         rationale="ok",
     )
     agree = OracleComparison(

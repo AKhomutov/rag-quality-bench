@@ -33,16 +33,25 @@ def test_prompt_contains_required_sections_and_rubric() -> None:
     assert "CASE-SPECIFIC INSTRUCTION" not in prompt
     assert "JUDGE RULES" in prompt
     assert "Treat REFERENCE FACTS as authoritative ground truth" in prompt
+    assert "Before assigning scores, compare the candidate answer" in prompt
     assert "SCORING RUBRIC" in prompt
     assert "Groundedness" in prompt
     assert "Source authority / provenance" in prompt
     assert "Unsupported reasoning" in prompt
+    assert "regardless of whether that unsupported claim originated from the user" in prompt
+    assert (
+        "Adopting or relying on unsupported user-provided content counts as unsupported" in prompt
+    )
     assert "Answer correctness" in prompt
     assert "OUTPUT FORMAT" in prompt
     assert '"groundedness"' in prompt
     assert '"source_authority"' in prompt
     assert '"unsupported_reasoning"' in prompt
+    assert '"fact_checks"' in prompt
+    assert '"evidence"' in prompt
+    assert '"assessment"' in prompt
     assert '"rationale"' in prompt
+    assert "misattributed" in prompt
 
 
 def test_prompt_includes_optional_case_instruction() -> None:

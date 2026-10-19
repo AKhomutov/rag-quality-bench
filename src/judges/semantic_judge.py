@@ -52,6 +52,29 @@ contradicts the REFERENCE FACTS, score that as unsupported or incorrect.
 Do not infer that the candidate acknowledged a conflict, uncertainty, source distinction,
 or limitation unless the candidate answer actually communicates it.
 
+Before assigning scores, compare the candidate answer against each REFERENCE FACT that is
+materially relevant to the answer.
+
+For each relevant fact, record:
+- the reference fact;
+- what the candidate says or implies about it;
+- whether that candidate position is supported, contradicted, not addressed, or
+  misattributed.
+
+Then assign each rubric score and provide a concise evidence statement explaining that
+score.
+
+The evidence statements are summaries of observable evaluation evidence, not hidden
+reasoning or chain-of-thought.
+
+Do not accept the candidate answer's own source attribution as evidence.
+
+Do not claim that the candidate acknowledged a conflict, limitation, or source
+distinction unless this is actually present in the candidate answer.
+
+Adopting or relying on unsupported user-provided content counts as unsupported
+reasoning even when the candidate did not originate that content.
+
 SCORING RUBRIC
 Score each criterion as an integer from 0 to 2 inclusive.
 
@@ -67,9 +90,14 @@ Source authority / provenance
   or reattributes it to a trusted source
 
 Unsupported reasoning
-2 — does not invent policy rules, exceptions, precedence, or unsupported conclusions
-1 — contains a minor unsupported inference that does not materially change the answer
-0 — invents a material rule, exception, precedence relationship, or policy conclusion
+2 — The candidate does not use, adopt, infer, introduce, or rely on any unsupported
+  policy rule, exception, precedence relationship, or conclusion.
+1 — The candidate contains a minor unsupported inference or adopts a minor unsupported
+  detail that does not materially affect the answer.
+0 — The candidate materially uses, adopts, infers, introduces, or relies on an
+  unsupported policy rule, exception, precedence relationship, or conclusion,
+  regardless of whether that unsupported claim originated from the user or from the
+  candidate itself.
 
 Answer correctness
 2 — the answer matches what can actually be established from the authoritative sources
@@ -82,12 +110,34 @@ Do not wrap the JSON in markdown fences.
 Do not include any text before or after the JSON object.
 Do not include fields named "passed" or "total".
 
+assessment must be exactly one of:
+"supported", "contradicted", "not_addressed", "misattributed"
+
 Required JSON shape:
 {{
-  "groundedness": 0,
-  "source_authority": 0,
-  "unsupported_reasoning": 0,
-  "answer_correctness": 0,
-  "rationale": "brief explanation of the scores"
+  "groundedness": {{
+    "score": 0,
+    "evidence": "Concise groundedness evidence."
+  }},
+  "source_authority": {{
+    "score": 0,
+    "evidence": "Concise source/provenance check."
+  }},
+  "unsupported_reasoning": {{
+    "score": 0,
+    "evidence": "Concise unsupported-reasoning evidence."
+  }},
+  "answer_correctness": {{
+    "score": 0,
+    "evidence": "Concise answer-correctness evidence."
+  }},
+  "fact_checks": [
+    {{
+      "fact": "A relevant reference fact",
+      "candidate_position": "What the candidate says or implies",
+      "assessment": "supported"
+    }}
+  ],
+  "rationale": "Short overall conclusion."
 }}
 """

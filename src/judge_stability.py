@@ -71,10 +71,10 @@ def summarize_judge_trials(
     dominant_verdict_passed = passed_trials >= failed_trials
     agreement_count = sum(1 for trial in trial_results if trial.passed == deterministic_passed)
 
-    groundedness = [trial.score.groundedness for trial in trial_results]
-    source_authority = [trial.score.source_authority for trial in trial_results]
-    unsupported_reasoning = [trial.score.unsupported_reasoning for trial in trial_results]
-    answer_correctness = [trial.score.answer_correctness for trial in trial_results]
+    groundedness = [trial.score.groundedness.score for trial in trial_results]
+    source_authority = [trial.score.source_authority.score for trial in trial_results]
+    unsupported_reasoning = [trial.score.unsupported_reasoning.score for trial in trial_results]
+    answer_correctness = [trial.score.answer_correctness.score for trial in trial_results]
 
     return JudgeStabilitySummary(
         case_id=case_id,
