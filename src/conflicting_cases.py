@@ -25,9 +25,6 @@ class ConflictingEvidenceCase:
     failure_description: str
     documents: list[str]
     steps: list[ConflictConversationStep]
-    expected_final_contains_all: list[str]
-    expected_final_contains_any: list[str]
-    expected_final_excludes: list[str]
 
 
 def load_conflicting_evidence_cases(path: Path) -> list[ConflictingEvidenceCase]:
@@ -68,18 +65,6 @@ def load_conflicting_evidence_cases(path: Path) -> list[ConflictingEvidenceCase]
             failure_description=get_required_string(case_data, "failure_description"),
             documents=documents,
             steps=steps,
-            expected_final_contains_all=get_required_string_list(
-                case_data,
-                "expected_final_contains_all",
-            ),
-            expected_final_contains_any=get_required_string_list(
-                case_data,
-                "expected_final_contains_any",
-            ),
-            expected_final_excludes=get_required_string_list(
-                case_data,
-                "expected_final_excludes",
-            ),
         )
         cases.append(case)
 

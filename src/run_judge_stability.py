@@ -6,14 +6,10 @@ from adversarial_cases import AdversarialCase, load_adversarial_cases
 from clients.anythingllm_client import AnythingLLMClient
 from clients.ollama_client import JUDGE_MODEL, JUDGE_TEMPERATURE, OllamaClient
 from conflicting_cases import ConflictingEvidenceCase, load_conflicting_evidence_cases
-from evaluators.adversarial_evaluator import (
-    run_adversarial_case,
-    score_adversarial_answer,
-)
+from evaluators.adversarial_evaluator import run_adversarial_case
 from evaluators.conflicting_evidence_evaluator import (
     resolve_case_documents,
     run_conflicting_evidence_case,
-    score_conflicting_evidence_answer,
 )
 from judge_debug import (
     case_trace_path,
@@ -137,17 +133,14 @@ def print_score_diagnostic(score: JudgeScore) -> None:
     print(score.rationale)
 
 
-def print_disagreement_or_flip(
+def print_flip(
     *,
-    label: str,
     case_id: str,
     trial: JudgeTrialResult,
-    deterministic_passed: bool,
 ) -> None:
     print()
-    print(f"=== {label}: {case_id} trial {trial.trial_number} ===")
+    print(f"=== FLIP: {case_id} trial {trial.trial_number} ===")
     print()
-    print(f"Deterministic: {format_verdict(deterministic_passed)}")
     print(f"Judge: {format_verdict(trial.passed)} {total_score(trial.score)}/8")
     print()
     print_score_diagnostic(trial.score)
@@ -155,7 +148,6 @@ def print_disagreement_or_flip(
 
 def print_case_stability(
     candidate_answer: str,
-    deterministic_passed: bool,
     trial_results: list[JudgeTrialResult],
     summary: JudgeStabilitySummary,
 ) -> None:
@@ -164,9 +156,6 @@ def print_case_stability(
     print()
     print("Fixed candidate answer:")
     print(candidate_answer)
-    print()
-    print("Deterministic verdict:")
-    print(format_verdict(deterministic_passed))
     print()
     print("Judge trials:")
     for trial in trial_results:
@@ -194,27 +183,11 @@ def print_case_stability(
             f"avg={dimension.average:.1f}"
         )
     print()
-    print("Agreement with deterministic:")
-    print(f"{summary.deterministic_agreement_count}/{summary.trials}")
-    print(f"{summary.deterministic_agreement_rate * 100.0:.1f}%")
+    print(f"Fact-check inconsistencies: {summary.fact_check_inconsistency_count}/{summary.trials}")
 
     for trial in trial_results:
-        is_disagreement = trial.passed != deterministic_passed
-        is_flip = trial.passed != summary.dominant_verdict_passed
-        if is_disagreement:
-            print_disagreement_or_flip(
-                label="DISAGREEMENT",
-                case_id=summary.case_id,
-                trial=trial,
-                deterministic_passed=deterministic_passed,
-            )
-        elif is_flip:
-            print_disagreement_or_flip(
-                label="FLIP",
-                case_id=summary.case_id,
-                trial=trial,
-                deterministic_passed=deterministic_passed,
-            )
+        if trial.passed != summary.dominant_verdict_passed:
+            print_flip(case_id=summary.case_id, trial=trial)
 
 
 def print_overall_summary(summaries: list[JudgeStabilitySummary]) -> None:
@@ -222,7 +195,7 @@ def print_overall_summary(summaries: list[JudgeStabilitySummary]) -> None:
     verdict_flips = sum(
         item.trials - max(item.passed_trials, item.failed_trials) for item in summaries
     )
-    disagreements = sum(item.trials - item.deterministic_agreement_count for item in summaries)
+    inconsistencies = sum(item.fact_check_inconsistency_count for item in summaries)
 
     print()
     print("=== Judge stability summary ===")
@@ -231,13 +204,15 @@ def print_overall_summary(summaries: list[JudgeStabilitySummary]) -> None:
         print(summary.case_id)
         print(f"dominant verdict: {format_verdict(summary.dominant_verdict_passed)}")
         print(f"verdict stability: {summary.verdict_stability * 100.0:.1f}%")
-        print(f"agreement with deterministic: {summary.deterministic_agreement_rate * 100.0:.1f}%")
+        print(
+            f"fact-check inconsistencies: {summary.fact_check_inconsistency_count}/{summary.trials}"
+        )
         print()
 
     print("Overall:")
     print(f"{total_judge_calls} judge calls")
     print(f"{verdict_flips} verdict flips relative to dominant result")
-    print(f"{disagreements} disagreements with deterministic")
+    print(f"{inconsistencies} fact-check inconsistencies")
 
     unstable = [item for item in summaries if item.verdict_stability < 1.0]
     if unstable:
@@ -256,7 +231,6 @@ def _evaluate_case(
     candidate_answer: str,
     user_messages: list[str],
     authoritative_sources: list[str],
-    deterministic_passed: bool,
     ollama: OllamaClient,
     debug_run_dir: Path,
 ) -> JudgeStabilitySummary:
@@ -275,11 +249,9 @@ def _evaluate_case(
     summary = summarize_judge_trials(
         case_id=spec.case_id,
         trial_results=trial_results,
-        deterministic_passed=deterministic_passed,
     )
     print_case_stability(
         candidate_answer=candidate_answer,
-        deterministic_passed=deterministic_passed,
         trial_results=trial_results,
         summary=summary,
     )
@@ -313,17 +285,12 @@ def main() -> int:
                     workspace.slug,
                     adversarial_case,
                 )
-                deterministic = score_adversarial_answer(
-                    adversarial_case,
-                    candidate_answer,
-                )
                 summaries.append(
                     _evaluate_case(
                         spec=spec,
                         candidate_answer=candidate_answer,
                         user_messages=[step.message for step in adversarial_case.steps],
                         authoritative_sources=support_sources,
-                        deterministic_passed=deterministic.passed,
                         ollama=ollama,
                         debug_run_dir=debug_run_dir,
                     )
@@ -337,17 +304,12 @@ def main() -> int:
                     anythingllm,
                     conflicting_case,
                 )
-                deterministic = score_conflicting_evidence_answer(
-                    conflicting_case,
-                    candidate_answer,
-                )
                 summaries.append(
                     _evaluate_case(
                         spec=spec,
                         candidate_answer=candidate_answer,
                         user_messages=[step.message for step in conflicting_case.steps],
                         authoritative_sources=_read_conflict_sources(conflicting_case),
-                        deterministic_passed=deterministic.passed,
                         ollama=ollama,
                         debug_run_dir=debug_run_dir,
                     )

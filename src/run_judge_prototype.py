@@ -1,32 +1,23 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
 from adversarial_cases import AdversarialCase, load_adversarial_cases
 from clients.anythingllm_client import AnythingLLMClient
 from clients.ollama_client import JUDGE_MODEL, JUDGE_TEMPERATURE, OllamaClient
 from conflicting_cases import ConflictingEvidenceCase, load_conflicting_evidence_cases
-from evaluators.adversarial_evaluator import (
-    run_adversarial_case,
-    score_adversarial_answer,
-)
+from evaluators.adversarial_evaluator import run_adversarial_case
 from evaluators.conflicting_evidence_evaluator import (
     resolve_case_documents,
     run_conflicting_evidence_case,
-    score_conflicting_evidence_answer,
 )
 from judge_debug import (
     case_trace_path,
     create_judge_debug_run_dir,
     parse_and_trace_judge_response,
 )
-from judge_results import (
-    JudgeScore,
-    OracleComparison,
-    judge_passed,
-    oracle_agrees,
-    total_score,
-)
+from judge_results import JudgeScore, judge_passed, total_score
 from judges.semantic_judge import build_semantic_judge_prompt
 from semantic_judge_specs import SemanticJudgeSpec, load_semantic_judge_specs
 from workspace_setup import (
@@ -56,6 +47,13 @@ CLEAR_FAIL_ANSWER = "Yes. The 7-day refund rule is the only exception to the no-
 MIXED_ANSWER = (
     "The documents conflict, but the 7-day rule is more specific, so it should take precedence."
 )
+
+
+@dataclass(frozen=True)
+class CaseJudgeResult:
+    case_id: str
+    judge_passed: bool
+    total: int
 
 
 def _index_adversarial_cases() -> dict[str, AdversarialCase]:
@@ -117,8 +115,18 @@ def format_verdict(passed: bool) -> str:
     return "PASS" if passed else "FAIL"
 
 
+def print_fact_checks(score: JudgeScore) -> None:
+    print("Fact checks:")
+    for check in score.fact_checks:
+        print(f'- "{check.fact}"')
+        print(f"  candidate: {check.candidate_position}")
+        print(f"  assessment: {check.assessment}")
+    print()
+
+
 def print_judge_block(score: JudgeScore, threshold: int) -> None:
-    print("LLM judge:")
+    print_fact_checks(score)
+    print("LLM judge scores:")
     print(f"  groundedness: {score.groundedness.score}/2")
     print(f"  source authority: {score.source_authority.score}/2")
     print(f"  unsupported reasoning: {score.unsupported_reasoning.score}/2")
@@ -135,11 +143,9 @@ def print_judge_block(score: JudgeScore, threshold: int) -> None:
 def print_case_result(
     case_id: str,
     candidate_answer: str,
-    deterministic_passed: bool,
-    deterministic_failures: list[str],
     score: JudgeScore,
     threshold: int,
-) -> OracleComparison:
+) -> CaseJudgeResult:
     print()
     print("=" * 72)
     print(f"Case: {case_id}")
@@ -148,48 +154,30 @@ def print_case_result(
     print("Candidate answer:")
     print(candidate_answer)
     print()
-    print("Deterministic oracle:")
-    print(f"  {format_verdict(deterministic_passed)}")
-    for failure in deterministic_failures:
-        print(f"  - {failure}")
-    print()
     print_judge_block(score, threshold)
-    comparison = OracleComparison(
+    return CaseJudgeResult(
         case_id=case_id,
-        deterministic_passed=deterministic_passed,
-        judge_score=score,
         judge_passed=judge_passed(score, threshold),
+        total=total_score(score),
     )
-    print()
-    print(f"Oracle agreement: {'YES' if oracle_agrees(comparison) else 'NO'}")
-    return comparison
 
 
-def print_summary(comparisons: list[OracleComparison]) -> None:
-    total = len(comparisons)
-    agreements = sum(1 for item in comparisons if oracle_agrees(item))
-    disagreements = total - agreements
-    rate = (agreements / total * 100.0) if total > 0 else 0.0
+def print_summary(results: list[CaseJudgeResult]) -> None:
+    total = len(results)
+    passed = sum(1 for item in results if item.judge_passed)
+    failed = total - passed
 
     print()
     print("=" * 72)
-    print("Oracle comparison summary")
+    print("Semantic judge summary")
     print("=" * 72)
     print()
     print(f"Cases: {total}")
-    print(f"Agreement: {agreements}")
-    print(f"Disagreement: {disagreements}")
+    print(f"Judge PASS: {passed}")
+    print(f"Judge FAIL: {failed}")
     print()
-    print(f"Agreement rate: {rate:.1f}%")
-
-    disagreed = [item for item in comparisons if not oracle_agrees(item)]
-    if disagreed:
-        print()
-        print("Disagreements:")
-        for item in disagreed:
-            det = format_verdict(item.deterministic_passed)
-            jud = format_verdict(item.judge_passed)
-            print(f"- {item.case_id}: deterministic {det}, judge {jud}")
+    for item in results:
+        print(f"- {item.case_id}: {format_verdict(item.judge_passed)} ({item.total}/8)")
 
 
 def print_probe_section(
@@ -238,10 +226,9 @@ def _run_adversarial_spec(
     ollama: OllamaClient,
     authoritative_sources: list[str],
     debug_run_dir: Path,
-) -> OracleComparison:
+) -> CaseJudgeResult:
     user_messages = [step.message for step in case.steps]
     candidate_answer = run_adversarial_case(client, workspace_slug, case)
-    deterministic = score_adversarial_answer(case, candidate_answer)
     _prompt, _raw, score = score_with_judge(
         ollama=ollama,
         debug_run_dir=debug_run_dir,
@@ -257,8 +244,6 @@ def _run_adversarial_spec(
     return print_case_result(
         case_id=spec.case_id,
         candidate_answer=candidate_answer,
-        deterministic_passed=deterministic.passed,
-        deterministic_failures=deterministic.failures,
         score=score,
         threshold=spec.threshold,
     )
@@ -270,11 +255,10 @@ def _run_conflict_spec(
     client: AnythingLLMClient,
     ollama: OllamaClient,
     debug_run_dir: Path,
-) -> tuple[OracleComparison, list[str], list[str]]:
+) -> tuple[CaseJudgeResult, list[str], list[str]]:
     user_messages = [step.message for step in case.steps]
     authoritative_sources = _read_conflict_sources(case)
     candidate_answer = run_conflicting_evidence_case(client, case)
-    deterministic = score_conflicting_evidence_answer(case, candidate_answer)
     prompt, _raw, score = score_with_judge(
         ollama=ollama,
         debug_run_dir=debug_run_dir,
@@ -290,15 +274,13 @@ def _run_conflict_spec(
     print()
     print("Final generic rubric prompt (from conflict case):")
     print(prompt)
-    comparison = print_case_result(
+    result = print_case_result(
         case_id=spec.case_id,
         candidate_answer=candidate_answer,
-        deterministic_passed=deterministic.passed,
-        deterministic_failures=deterministic.failures,
         score=score,
         threshold=spec.threshold,
     )
-    return comparison, user_messages, authoritative_sources
+    return result, user_messages, authoritative_sources
 
 
 def main() -> int:
@@ -325,7 +307,7 @@ def main() -> int:
     ollama = OllamaClient()
     support_sources = _read_support_policy()
     workspace: PreparedWorkspace | None = None
-    comparisons: list[OracleComparison] = []
+    results: list[CaseJudgeResult] = []
     probe_user_messages: list[str] | None = None
     probe_sources: list[str] | None = None
     probe_facts: list[str] | None = None
@@ -341,7 +323,7 @@ def main() -> int:
                 if adversarial_case is None:
                     msg = f"adversarial case {spec.case_id!r} not found"
                     raise ValueError(msg)
-                comparisons.append(
+                results.append(
                     _run_adversarial_spec(
                         spec=spec,
                         case=adversarial_case,
@@ -357,7 +339,7 @@ def main() -> int:
                 if conflicting_case is None:
                     msg = f"conflicting case {spec.case_id!r} not found"
                     raise ValueError(msg)
-                comparison, probe_user_messages, probe_sources = _run_conflict_spec(
+                result, probe_user_messages, probe_sources = _run_conflict_spec(
                     spec=spec,
                     case=conflicting_case,
                     client=anythingllm,
@@ -367,7 +349,7 @@ def main() -> int:
                 probe_facts = spec.reference_facts
                 probe_instruction = spec.case_instruction
                 probe_threshold = spec.threshold
-                comparisons.append(comparison)
+                results.append(result)
             else:
                 msg = f"unsupported source_suite {spec.source_suite!r}"
                 raise ValueError(msg)
@@ -375,7 +357,7 @@ def main() -> int:
         if workspace is not None:
             cleanup_workspace(anythingllm, workspace)
 
-    print_summary(comparisons)
+    print_summary(results)
 
     if probe_user_messages is None or probe_sources is None or probe_facts is None:
         msg = "conflict probe context was not prepared"

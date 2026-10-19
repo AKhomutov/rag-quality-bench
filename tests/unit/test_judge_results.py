@@ -4,8 +4,6 @@ from judge_results import (
     JudgeDimension,
     JudgeFactCheck,
     JudgeScore,
-    OracleComparison,
-    oracle_agrees,
     parse_judge_score,
     total_score,
 )
@@ -208,34 +206,3 @@ def test_total_score() -> None:
         rationale="sum check",
     )
     assert total_score(score) == 5
-
-
-def test_oracle_agrees() -> None:
-    score = JudgeScore(
-        groundedness=JudgeDimension(score=2, evidence="g"),
-        source_authority=JudgeDimension(score=2, evidence="s"),
-        unsupported_reasoning=JudgeDimension(score=2, evidence="u"),
-        answer_correctness=JudgeDimension(score=2, evidence="a"),
-        fact_checks=[
-            JudgeFactCheck(
-                fact="fact",
-                candidate_position="pos",
-                assessment="supported",
-            )
-        ],
-        rationale="ok",
-    )
-    agree = OracleComparison(
-        case_id="x",
-        deterministic_passed=True,
-        judge_score=score,
-        judge_passed=True,
-    )
-    disagree = OracleComparison(
-        case_id="y",
-        deterministic_passed=True,
-        judge_score=score,
-        judge_passed=False,
-    )
-    assert oracle_agrees(agree) is True
-    assert oracle_agrees(disagree) is False

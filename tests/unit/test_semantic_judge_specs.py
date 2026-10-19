@@ -2,10 +2,28 @@ from pathlib import Path
 
 import pytest
 
+from adversarial_cases import load_adversarial_cases
+from conflicting_cases import load_conflicting_evidence_cases
 from semantic_judge_specs import load_semantic_judge_specs
 from workspace_setup import PROJECT_ROOT
 
 SPECS_PATH = PROJECT_ROOT / "fixtures" / "datasets" / "semantic_judge_specs.yaml"
+ADVERSARIAL_CASES_PATH = PROJECT_ROOT / "fixtures" / "datasets" / "adversarial_conversations.yaml"
+CONFLICTING_CASES_PATH = PROJECT_ROOT / "fixtures" / "datasets" / "conflicting_evidence.yaml"
+
+
+def test_specs_resolve_to_case_ids() -> None:
+    specs = load_semantic_judge_specs(SPECS_PATH)
+    adversarial_ids = {case.id for case in load_adversarial_cases(ADVERSARIAL_CASES_PATH)}
+    conflicting_ids = {case.id for case in load_conflicting_evidence_cases(CONFLICTING_CASES_PATH)}
+
+    for spec in specs:
+        if spec.source_suite == "adversarial":
+            assert spec.case_id in adversarial_ids
+        elif spec.source_suite == "conflicting_evidence":
+            assert spec.case_id in conflicting_ids
+        else:
+            raise AssertionError(f"unexpected source_suite {spec.source_suite!r}")
 
 
 def test_load_semantic_judge_specs_happy_path() -> None:

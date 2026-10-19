@@ -44,14 +44,6 @@ class JudgeScore:
     rationale: str
 
 
-@dataclass(frozen=True)
-class OracleComparison:
-    case_id: str
-    deterministic_passed: bool
-    judge_score: JudgeScore
-    judge_passed: bool
-
-
 JUDGE_PASS_THRESHOLD = 7
 
 
@@ -66,10 +58,6 @@ def total_score(score: JudgeScore) -> int:
 
 def judge_passed(score: JudgeScore, threshold: int = JUDGE_PASS_THRESHOLD) -> bool:
     return total_score(score) >= threshold
-
-
-def oracle_agrees(comparison: OracleComparison) -> bool:
-    return comparison.deterministic_passed == comparison.judge_passed
 
 
 def _require_object(payload: dict[str, object], key: str) -> dict[str, object]:

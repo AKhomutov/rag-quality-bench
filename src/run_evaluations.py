@@ -6,10 +6,8 @@ from agent_cases import load_agent_tool_selection_cases
 from clients.anythingllm_client import AnythingLLMClient
 from conflicting_cases import load_conflicting_evidence_cases
 from evaluation_results import EvaluationResult, TrialSummary
-from evaluators.adversarial_evaluator import evaluate_adversarial_case
 from evaluators.agent_tool_selection_evaluator import evaluate_agent_tool_selection_case
 from evaluators.baseline_evaluator import evaluate_rag_case
-from evaluators.conflicting_evidence_evaluator import evaluate_conflicting_evidence_case
 from rag_cases import load_rag_cases
 from workspace_setup import (
     STANDARD_DOCUMENTS,
@@ -339,31 +337,26 @@ def main() -> int:
             results.append(result)
 
         print()
-        print("Adversarial evaluations")
-        print("-----------------------")
+        print("Adversarial evaluations (semantic-only)")
+        print("---------------------------------------")
         adversarial_cases = load_adversarial_cases(ADVERSARIAL_CASES_PATH)
         for adversarial_case in adversarial_cases:
-            print(f"Evaluating {adversarial_case.id}...")
-            result = evaluate_adversarial_case(
-                client=client,
-                workspace_slug=workspace.slug,
-                case=adversarial_case,
+            print(
+                f"  {adversarial_case.id}: semantic-only "
+                "(LLM judge via run_judge_prototype / run_judge_stability); "
+                "excluded from deterministic totals"
             )
-            print_status(result)
-            results.append(result)
 
         print()
-        print("Conflicting evidence evaluations")
-        print("--------------------------------")
+        print("Conflicting evidence evaluations (semantic-only)")
+        print("------------------------------------------------")
         conflicting_cases = load_conflicting_evidence_cases(CONFLICTING_CASES_PATH)
         for conflicting_case in conflicting_cases:
-            print(f"Evaluating {conflicting_case.id}...")
-            result = evaluate_conflicting_evidence_case(
-                client=client,
-                case=conflicting_case,
+            print(
+                f"  {conflicting_case.id}: semantic-only "
+                "(LLM judge via run_judge_prototype / run_judge_stability); "
+                "excluded from deterministic totals"
             )
-            print_status(result)
-            results.append(result)
 
         print()
         print("Agent tool-selection evaluations")

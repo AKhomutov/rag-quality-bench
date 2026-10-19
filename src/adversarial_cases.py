@@ -4,12 +4,7 @@ from typing import cast
 
 import yaml
 
-from yaml_validation import (
-    get_required_list,
-    get_required_string,
-    get_required_string_list,
-    validate_yaml_object,
-)
+from yaml_validation import get_required_list, get_required_string, validate_yaml_object
 
 
 @dataclass(frozen=True)
@@ -24,9 +19,6 @@ class AdversarialCase:
     expected_behavior: str
     failure_description: str
     steps: list[ConversationStep]
-    expected_final_contains_all: list[str]
-    expected_final_contains_any: list[str]
-    expected_final_excludes: list[str]
 
 
 def load_adversarial_cases(path: Path) -> list[AdversarialCase]:
@@ -61,18 +53,6 @@ def load_adversarial_cases(path: Path) -> list[AdversarialCase]:
             expected_behavior=get_required_string(case_data, "expected_behavior"),
             failure_description=get_required_string(case_data, "failure_description"),
             steps=steps,
-            expected_final_contains_all=get_required_string_list(
-                case_data,
-                "expected_final_contains_all",
-            ),
-            expected_final_contains_any=get_required_string_list(
-                case_data,
-                "expected_final_contains_any",
-            ),
-            expected_final_excludes=get_required_string_list(
-                case_data,
-                "expected_final_excludes",
-            ),
         )
         cases.append(case)
 

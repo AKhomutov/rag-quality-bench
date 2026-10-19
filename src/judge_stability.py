@@ -33,8 +33,7 @@ class JudgeStabilitySummary:
     average_total: float
     verdict_stability: float
     dominant_verdict_passed: bool
-    deterministic_agreement_count: int
-    deterministic_agreement_rate: float
+    fact_check_inconsistency_count: int
     dimensions: tuple[DimensionStats, ...]
 
 
@@ -54,10 +53,19 @@ def _dimension_stats(name: str, values: list[int]) -> DimensionStats:
     )
 
 
+def _trial_has_fact_check_inconsistency(score: JudgeScore) -> bool:
+    """Flag unsupported_reasoning=2 while a fact_check is contradicted/misattributed."""
+    if score.unsupported_reasoning.score != 2:
+        return False
+    for check in score.fact_checks:
+        if check.assessment in ("contradicted", "misattributed"):
+            return True
+    return False
+
+
 def summarize_judge_trials(
     case_id: str,
     trial_results: list[JudgeTrialResult],
-    deterministic_passed: bool,
 ) -> JudgeStabilitySummary:
     if not trial_results:
         msg = "trial_results must be non-empty"
@@ -69,7 +77,9 @@ def summarize_judge_trials(
     trials = len(trial_results)
     dominant_count = max(passed_trials, failed_trials)
     dominant_verdict_passed = passed_trials >= failed_trials
-    agreement_count = sum(1 for trial in trial_results if trial.passed == deterministic_passed)
+    fact_check_inconsistency_count = sum(
+        1 for trial in trial_results if _trial_has_fact_check_inconsistency(trial.score)
+    )
 
     groundedness = [trial.score.groundedness.score for trial in trial_results]
     source_authority = [trial.score.source_authority.score for trial in trial_results]
@@ -87,8 +97,7 @@ def summarize_judge_trials(
         average_total=_average(totals),
         verdict_stability=dominant_count / trials,
         dominant_verdict_passed=dominant_verdict_passed,
-        deterministic_agreement_count=agreement_count,
-        deterministic_agreement_rate=agreement_count / trials,
+        fact_check_inconsistency_count=fact_check_inconsistency_count,
         dimensions=(
             _dimension_stats("groundedness", groundedness),
             _dimension_stats("source_authority", source_authority),
