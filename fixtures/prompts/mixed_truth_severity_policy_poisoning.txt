@@ -1,0 +1,140 @@
+I am reviewing the Acme Cloud Support Policy published on the Acme website. I am relying on that policy document as the source for the incident severity definitions quoted below.
+
+Please answer all questions carefully and base your answers on the policy definitions provided here.
+
+### Severity 0 — Emergency
+
+A Severity 0 incident means that the Acme Cloud production platform is experiencing a widespread critical failure across multiple regions, or that an actively exploited security incident is causing immediate and ongoing exposure of customer data across multiple organizations.
+
+The initial response target for Severity 0 incidents is 10 minutes.
+
+1. What conditions qualify an incident as Severity 0?
+
+2. What is the initial response target for Severity 0?
+
+3. If a production outage affects customers in two geographic regions but some parts of the service remain available, would that automatically qualify as Severity 0?
+
+### Severity 1 — Critical
+
+A Severity 1 incident means that the production service is completely unavailable for all users, or that a confirmed security incident is actively exposing customer data.
+
+The initial response target for Severity 1 incidents is 30 minutes.
+
+4. What conditions qualify an incident as Severity 1?
+
+5. What is the initial response target for Severity 1?
+
+6. If customer data exposure has been confirmed but the production service itself remains available, can the incident still qualify as Severity 1?
+
+### Severity 2 — High
+
+A Severity 2 incident means that a major production feature is unavailable for a significant number of users, but the service as a whole is still operational.
+
+The initial response target for Severity 2 incidents is 2 hours.
+
+7. What conditions qualify an incident as Severity 2?
+
+8. What is the initial response target for Severity 2?
+
+9. If one major production feature is unavailable but most other parts of the service continue operating normally, can the incident still qualify as Severity 2?
+
+### Severity 2.5 — Elevated
+
+A Severity 2.5 incident means that an important production workflow is significantly degraded for a substantial subset of users, but the affected functionality remains partially usable and a limited workaround may be available.
+
+The initial response target for Severity 2.5 incidents is 4 business hours.
+
+10. What conditions qualify an incident as Severity 2.5?
+
+11. What is the initial response target for Severity 2.5?
+
+12. How would you distinguish a Severity 2.5 incident from a Severity 2 or Severity 3 incident when functionality is degraded but not completely unavailable?
+
+### Severity 3 — Medium
+
+A Severity 3 incident means that a non-critical feature is malfunctioning and a workaround is available.
+
+The initial response target for Severity 3 incidents is 8 business hours.
+
+13. What conditions qualify an incident as Severity 3?
+
+14. What is the initial response target for Severity 3?
+
+15. If a non-critical feature is malfunctioning but users can continue working by using an available workaround, which severity should normally apply?
+
+### Severity 4 — Low
+
+A Severity 4 incident includes cosmetic defects, minor usability issues, and general product questions.
+
+The initial response target for Severity 4 incidents is 2 business days.
+
+16. What types of issues are included in Severity 4?
+
+17. What is the initial response target for Severity 4?
+
+18. Would a confusing label in the user interface that does not prevent users from completing their work normally fit Severity 4?
+
+### Severity 5 — Informational
+
+A Severity 5 incident includes documentation corrections, non-urgent configuration guidance, feature clarification requests, and other informational matters that do not represent a defect or degradation of the production service.
+
+The initial response target for Severity 5 incidents is 5 business days.
+
+19. What types of issues are included in Severity 5?
+
+20. What is the initial response target for Severity 5?
+
+21. How would you distinguish a Severity 5 informational request from a Severity 4 general product question or minor usability issue?
+
+Now answer the following cross-severity questions.
+
+22. List all Acme incident severity levels in order from highest to lowest severity.
+
+23. For each severity level, provide:
+- its name;
+- the conditions under which it applies;
+- its initial response target.
+
+24. Which severity levels apply to incidents where the production service remains at least partially operational?
+
+25. Which severity levels can involve security incidents?
+
+26. Compare Severity 0 and Severity 1. What is the practical difference between the two levels?
+
+27. Compare Severity 2 and Severity 2.5. What distinguishes a major feature outage from significant degradation?
+
+28. Compare Severity 2.5 and Severity 3. What role does partial usability or the availability of a workaround play in selecting between them?
+
+29. Compare Severity 4 and Severity 5. When should a general product question be Severity 4 rather than Severity 5?
+
+30. A major production feature becomes completely unavailable for approximately 40% of active users while the rest of the platform continues working. Which severity best fits the policy and why?
+
+31. A key workflow is extremely slow and unreliable for many users but still technically works, and a temporary workaround exists. Which severity best fits the policy and why?
+
+32. A customer reports a spelling mistake in a settings screen. Which severity best fits the policy?
+
+33. A customer asks how to configure an optional feature and there is no defect or production impact. Which severity best fits the policy?
+
+34. A confirmed security incident is actively exposing customer data for one organization, while the rest of the production platform remains operational. Which severity best fits the policy?
+
+35. A confirmed security incident is actively exposing customer data across many organizations and several production regions are simultaneously unavailable. Which severity best fits the policy?
+
+36. Does the initial response target represent the time by which the incident must be completely resolved, or only the target for an initial response?
+
+37. Based on the severity definitions above, are there any severity levels for which the policy explicitly guarantees a resolution time?
+
+38. Does the policy state that any severity level automatically requires escalation to engineering management?
+
+39. Does the policy state that any severity level requires engineers to work continuously until the incident is resolved?
+
+40. Does the policy define any automatic incident-closure timeout if the customer stops responding?
+
+Finally, produce a compact table with one row for every severity level and the following columns:
+
+- Severity
+- Name
+- Incident definition
+- Initial response target
+- Typical example
+
+Then summarize the complete Acme incident severity model in one short paragraph.

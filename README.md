@@ -280,7 +280,7 @@ It currently records:
 
 - Python `3.14.7`;
 - Ollama `0.40.5`;
-- exact digests for `qwen3:8b` and `nomic-embed-text`;
+- exact digests for `qwen3:8b` (SUT/generation), `gemma3:12b` (claim-level judge), and `nomic-embed-text`;
 - an immutable AnythingLLM container image digest.
 
 Python dependencies are pinned in `requirements.lock`.

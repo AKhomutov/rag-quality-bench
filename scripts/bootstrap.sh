@@ -245,8 +245,10 @@ then
 fi
 
 EXPECTED_QWEN="$(normalize_digest "$(read_lock_value 'data["models"]["qwen3:8b"]["digest"]')")"
+EXPECTED_GEMMA="$(normalize_digest "$(read_lock_value 'data["models"]["gemma3:12b"]["digest"]')")"
 EXPECTED_NOMIC="$(normalize_digest "$(read_lock_value 'data["models"]["nomic-embed-text:latest"]["digest"]')")"
 ensure_model "qwen3:8b" "$EXPECTED_QWEN"
+ensure_model "gemma3:12b" "$EXPECTED_GEMMA"
 ensure_model "nomic-embed-text:latest" "$EXPECTED_NOMIC"
 
 ALLM_IMAGE="$(read_lock_value 'data["anythingllm"]["image"]')"

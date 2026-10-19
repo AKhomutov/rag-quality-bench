@@ -283,7 +283,13 @@ class AnythingLLMClient:
         thread = _validate_json_object(thread_raw)
         return _get_required_string(thread, "slug")
 
-    def chat(self, workspace_slug: str, message: str) -> ChatResponse:
+    def chat(
+        self,
+        workspace_slug: str,
+        message: str,
+        *,
+        timeout: int = 60,
+    ) -> ChatResponse:
         body: dict[str, str] = {
             "message": message,
             "mode": "query",
@@ -291,7 +297,7 @@ class AnythingLLMClient:
         response = self.session.post(
             f"{self.base_url}/api/v1/workspace/{workspace_slug}/chat",
             json=body,
-            timeout=60,
+            timeout=timeout,
         )
         response.raise_for_status()
         raw: object = response.json()
