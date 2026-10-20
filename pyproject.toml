@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "rag-quality-bench"
 version = "0.1.0"
-description = "RAG and agent quality evaluation harness for AnythingLLM"
+description = "Eval harness for RAG and agent behavior on AnythingLLM"
 requires-python = ">=3.12"
 dependencies = [
   "requests>=2.32",
