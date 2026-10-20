@@ -1,3 +1,10 @@
+"""HISTORICAL EXPERIMENT — not part of normal evaluation flow.
+
+Monolithic gemma3:12b claim-level judge on a fixed candidate (structured output).
+Superseded for current long-form work by ``run_split_claim_pipeline``.
+Kept for comparison/debug reproducibility.
+"""
+
 from __future__ import annotations
 
 import time

@@ -35,7 +35,10 @@ def test_load_semantic_judge_specs_happy_path() -> None:
     assert conflict.source_suite == "conflicting_evidence"
     assert conflict.threshold == 7
     assert conflict.case_instruction is not None
-    assert "unresolved contradiction" in conflict.case_instruction
+    assert "fixture already establishes" in conflict.case_instruction
+    assert "Do not rediscover whether a conflict exists" in conflict.case_instruction
+    assert "acknowledges the unresolved conflict" in conflict.case_instruction
+    assert "precedence or reconciliation" in conflict.case_instruction
     assert len(conflict.reference_facts) == 4
     assert any("precedence" in fact for fact in conflict.reference_facts)
 

@@ -1,3 +1,9 @@
+"""HISTORICAL EXPERIMENT — not part of normal evaluation flow.
+
+Live SUT once + monolithic gemma3:12b claim-level judge trials.
+Superseded for current long-form work by ``run_split_claim_pipeline``.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

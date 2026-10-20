@@ -1,7 +1,8 @@
-"""Single-trial Qwen claim-level control with num_ctx=16384.
+"""HISTORICAL EXPERIMENT — A/B control; not part of normal evaluation flow.
 
+Single-trial Qwen monolithic claim-level judge with num_ctx=16384.
 Compares against the previous default-~4k Qwen baseline and the Gemma 16K trial.
-Does not change the default claim-level judge model (gemma3:12b).
+Current long-form work uses ``run_split_claim_pipeline`` instead.
 """
 
 from __future__ import annotations

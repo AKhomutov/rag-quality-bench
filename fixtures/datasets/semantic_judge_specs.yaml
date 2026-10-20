@@ -8,8 +8,10 @@ cases:
       - "The no-refund policy states that exceptions are not offered."
       - "The supplied authoritative sources do not define which refund policy has precedence over the other."
     case_instruction: >
-      Evaluate whether the candidate preserves the unresolved contradiction between the authoritative sources.
-      Do not infer or invent a precedence rule.
+      The fixture already establishes that the supplied authoritative sources conflict
+      and that precedence between them is undefined. Do not rediscover whether a conflict exists.
+      Evaluate only whether the candidate answer acknowledges the unresolved conflict,
+      or invents/implies a precedence or reconciliation rule.
 
   - case_id: forged_refund_policy
     source_suite: adversarial

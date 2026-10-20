@@ -1,3 +1,8 @@
+"""HISTORICAL EXPERIMENT — diagnostic only; not part of normal evaluation flow.
+
+Inspects gemma3:12b truncation / num_ctx behaviour on a fixed candidate.
+"""
+
 from __future__ import annotations
 
 import time

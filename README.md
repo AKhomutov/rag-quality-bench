@@ -200,6 +200,207 @@ AnythingLLM workspaces are created through the API for each required corpus and 
 Deterministic assertions are used for exact factual, structural, and tool-use checks.
 Semantic adversarial and conflicting-evidence cases are evaluated with the LLM judge against explicit reference facts.
 
+The long-form severity case is a separate experiment about the judge itself. Its architecture is documented below.
+
+## Evaluator architecture experiment: from monolithic judge to claim-level pipeline
+
+Shorter adversarial cases use the suite semantic judge (`qwen3:8b`). This experiment asks a harder question: can that style of judge audit one long mixed-truth answer without hiding its own failures?
+
+The current design for this case is a split claim pipeline on `qwen3:8b` with explicit `CLAIM_LEVEL_NUM_CTX=16384`. The monolithic judge described here is the prototype that led to that split. `gemma3:12b` was a comparison candidate for the prototype.
+
+### Stress test
+
+The case is a long mixed-truth Acme severity policy prompt (6892 characters), separate from the multi-turn Severity 0.5 conversation above:
+
+```text
+fixtures/prompts/mixed_truth_severity_policy_poisoning.txt
+```
+
+Real Severity 1–4 definitions are mixed symmetrically with fake Severity 0, 2.5, and 5. The user frames all of them as text from the Acme website or an updated company policy. The candidate answer accepts that poisoned ontology and derives additional distinctions and classifications from it.
+
+The prompt is SHA-pinned. `src/long_form_severity_prompt.py` checks the fixture bytes before a run. Judge experiments reuse one fixed candidate answer, also SHA-pinned, in `src/claim_level_config.py`, so the system under test is not called again.
+
+### Monolithic judge
+
+The first claim-level judge performed the whole audit in one call:
+
+```text
+long candidate
++ authoritative source
++ F1–F16
++ provenance reasoning
++ claim extraction
++ claim classification
++ dependency reasoning
++ coverage
++ one large structured JSON response
+```
+
+The single call was an intentional prototype. On this prompt it exposed reliability problems that shorter suite cases had not shown.
+
+### Context-budget discovery
+
+The default Ollama run did not send `num_ctx`.
+
+Observed Gemma call:
+
+| field | value |
+| --- | --- |
+| `prompt_eval_count` | 2051 |
+| `eval_count` | 2045 |
+| `done_reason` | `length` |
+
+Those counts land on a shared ~4096 context and output budget. The call stopped because that budget was exhausted.
+
+With `num_ctx = 16384`, the same task completed normally (`done_reason = stop`) and received the full prompt.
+
+The Qwen control showed the same configuration effect. Under the implicit ~4k context, `qwen3:8b` often treated the fake severity levels as supported. The same `qwen3:8b` with `num_ctx=16384` identified the unsupported claims, the derived claims, and the provenance failures.
+
+Before concluding that a judge model is semantically weak, verify that it actually received the full evaluation prompt and had enough output budget to complete its decision.
+
+### Controlled model comparison
+
+Both models judged the same SHA-pinned candidate. The experiment showed that runtime configuration mattered more than the initial apparent model-size difference.
+
+| | `qwen3:8b` | `gemma3:12b` |
+| --- | --- | --- |
+| Role here | Lightweight local model. Current split-pipeline judge. | Independent stronger local candidate for the monolithic judge. |
+| Implicit ~4k context | Often treated fake severity levels as supported. | Truncated (`done_reason = length`). |
+| Explicit 16K context | Full completion. Fake severities rejected. Derived claims and provenance issues detected. No internal fact-ID inconsistencies in the control run. | Valid semantic FAIL. Most poisoned severity claims rejected. |
+| Local cost | Lighter on this RTX 4080 Super setup. | Heavier and slower on the same GPU. |
+
+The split pipeline currently uses `qwen3:8b`.
+
+### Why the single call was abandoned
+
+The failure was broader than model quality. One judge call had too many responsibilities:
+
+- discover claims;
+- judge evidence;
+- detect provenance;
+- identify derived hallucinations;
+- track coverage;
+- serialize a very large result.
+
+That increased context pressure, output size, debugging difficulty, and semantic coupling between decisions. Structured output fixed the JSON shape. The reasoning jobs stayed coupled inside one response.
+
+### Split pipeline
+
+```mermaid
+flowchart TD
+    Candidate[Fixed candidate response]
+    Extract[LLM: extract material claims]
+    Base[LLM: evidence judgement]
+    Dependency[LLM: dependency judgement]
+    Aggregate[Python: aggregate + metrics]
+    Verdict[PASS / FAIL]
+
+    Candidate --> Extract
+    Extract --> Base
+    Base --> Dependency
+    Dependency --> Aggregate
+    Aggregate --> Verdict
+```
+
+Base and dependency judgements are batched. The diagram shows semantic stages, while a run sends several claims per LLM call.
+
+LLMs perform only semantic micro-tasks. Deterministic code handles orchestration, validation, aggregation, metrics, reporting, and the final verdict.
+
+Implementation: `src/run_split_claim_pipeline.py`. Per-run traces are written under `reports/judge_debug/`.
+
+### Stages
+
+**Stage 1 — extraction.** The model lists material factual, policy, and classification claims (`C1` … `Cn`). Authoritative facts stay out of this prompt. Truth is judged in a later stage.
+
+**Stage 2 — base evidence.** Each claim is checked against the authoritative source, F1–F16, its candidate excerpt, and the provenance rules. Statuses:
+
+```text
+supported
+contradicted
+not_in_evidence
+```
+
+The original poisoning prompt is left out. User-provided content is explicitly untrusted.
+
+**Stage 2B — dependency.** Only `not_in_evidence` claims are checked for dependence on already unsupported premises. The additional status is:
+
+```text
+derived_from_unsupported_claim
+```
+
+**Aggregation.** Pure Python. PASS requires every claim to be `supported` and no provenance issue. The overall verdict is computed in code.
+
+### First split run
+
+Unbatched first run on the fixed candidate:
+
+| metric | value |
+| --- | --- |
+| claims | 54 |
+| supported | 26 |
+| contradicted | 13 |
+| not_in_evidence | 5 |
+| derived | 10 |
+| provenance issues | 20 |
+| grounded claim rate | 48.1% |
+| verdict | FAIL |
+
+Fake Severity 0, 2.5, and 5 were rejected. Derived poisoning chains were detected. The run completed with no execution errors.
+
+A mutual dependency appeared in that first run. Dependency inference remains a semantic weak point, so it stays isolated as its own debuggable stage.
+
+### Batching
+
+| | before batching | after batching |
+| --- | --- | --- |
+| extraction | 1 call | 1 call |
+| base judgement | 54 calls | 9 batches (size 6) |
+| dependency | 15 calls | 1 batch (size 8) |
+| total LLM calls | 70 | 11 |
+| wall time | ~549s | ~176.7s |
+| speedup |  | 3.11x |
+
+The batched run kept the same 54 extracted claims, the FAIL verdict, rejection of the fake severities, and 20 provenance issues. It completed with no execution errors.
+
+The exact distribution among `contradicted`, `not_in_evidence`, and `derived_from_unsupported_claim` changed under batching. The high-level verdict and poisoned-claim detection stayed stable. That boundary shift is an evaluator limitation.
+
+### Design principle
+
+LLMs perform the smallest useful semantic operation.
+Deterministic code owns orchestration and verdicts.
+
+Use an LLM only when the operation genuinely requires semantic judgement.
+Everything deterministic, structural, trace-based, numeric, lifecycle-related,
+or schema-related stays in ordinary code.
+
+Code owns schema validation, exact IDs, fact-ID validation, tool traces, aggregation, thresholds, metrics, lifecycle, reporting, and the final verdict.
+
+The LLM extracts semantic claims, decides whether evidence supports a natural-language claim, and identifies semantic dependency when a deterministic rule is insufficient.
+
+The full call-site inventory and keep/replace decisions live in
+[`docs/evaluator-llm-audit.md`](docs/evaluator-llm-audit.md).
+
+### Lessons learned
+
+- A judge model can appear semantically weak when the real problem is context truncation.
+- Explicit `num_ctx` is part of evaluator reproducibility.
+- Structured output solves syntax and schema problems. It does not solve semantic reasoning problems.
+- Large monolithic judge prompts hide failure modes.
+- Claim-level decomposition makes errors attributable and debuggable.
+- Deterministic aggregation is preferable to asking an LLM for an overall verdict.
+- Batching can dramatically reduce inference time, and it can slightly shift semantic classification boundaries.
+- Keep semantic responsibilities as small as possible.
+
+### Reproducibility for this experiment
+
+Python version, Ollama version, model tags and full digests, the `nomic-embed-text` digest, and the AnythingLLM image digest live in `infra/environment.lock`. They are not repeated here.
+
+This experiment also pins:
+
+- explicit `CLAIM_LEVEL_NUM_CTX=16384` in `src/claim_level_config.py`;
+- the SHA-pinned prompt at `fixtures/prompts/mixed_truth_severity_policy_poisoning.txt`, checked by `src/long_form_severity_prompt.py`;
+- the SHA-pinned fixed candidate used for judge reruns, in `src/claim_level_config.py`.
+
 ## Evaluation suites
 
 ### Baseline RAG
@@ -280,8 +481,10 @@ It currently records:
 
 - Python `3.14.7`;
 - Ollama `0.40.5`;
-- exact digests for `qwen3:8b` (SUT/generation), `gemma3:12b` (claim-level judge), and `nomic-embed-text`;
+- exact digests for `qwen3:8b`, `gemma3:12b`, and `nomic-embed-text`;
 - an immutable AnythingLLM container image digest.
+
+`qwen3:8b` generates answers, judges the shorter semantic suite, and runs the current split claim pipeline. `gemma3:12b` is the comparison model from the monolithic-judge experiment above.
 
 Python dependencies are pinned in `requirements.lock`.
 
@@ -354,6 +557,8 @@ Ollama models are verified against expected digests. Ollama does not provide a r
 AnythingLLM runtime storage, vector data, chat history and API keys are not committed.
 
 Model behavior remains non-deterministic. Repeated trials are used where that behavior matters to the evaluation.
+
+Claim-level judge reruns also require explicit `CLAIM_LEVEL_NUM_CTX=16384` and the SHA-pinned prompt and fixed candidate. Paths and the rest of that contract are in [Reproducibility for this experiment](#reproducibility-for-this-experiment).
 
 ## Development
 
