@@ -20,6 +20,7 @@ Deterministic code owns orchestration, schema validation, traces, aggregation, a
 | 9 | Split pipeline Stage 2 base batches | Ollama qwen3:8b | evidence judge | C | keep LLM |
 | 10 | Split pipeline Stage 2B dependency batches | Ollama qwen3:8b | dependency | D | keep LLM for now |
 | 11 | Split pipeline aggregation / verdict | Python | evaluator | F, E, I | **code** (already) |
+| 11b | Split pipeline dependency-graph normalization (SCC) | Python | evaluator | F | **code** (deterministic; raw judge edges kept) |
 | 12 | `run_long_form_severity_eval` SUT + gemma judge | AnythingLLM + Ollama gemma3:12b | historical | A+C | historical experiment |
 | 13 | `run_long_form_judge_structured` | Ollama gemma3:12b | historical | C | historical experiment |
 | 14 | `run_long_form_judge_diagnostic` | Ollama gemma3:12b | historical | C+J | historical experiment |
@@ -47,6 +48,7 @@ Type legend: A SUT · B claim extraction · C evidence judgement · D dependency
 | Per-claim evidence | support vs contradict vs not_in_evidence | keep LLM | NL vs policy |
 | Claim dependency | derived-from-unsupported | keep LLM for now | semantic relationship; no safe heuristic |
 | Schema / fact IDs / verdict | none | code | deterministic |
+| Dependency-graph cycle normalization | none | code | SCC on raw edges; normalized graph → final metrics |
 | Monolithic gemma / qwen 16k runners | full claim audit | historical | comparison/debug only |
 
 ## Changes made in this audit pass
@@ -87,6 +89,7 @@ These modules are experiments and must not be treated as the current evaluator a
 - `run_long_form_judge_structured`
 - `run_long_form_judge_diagnostic`
 - `run_long_form_judge_qwen_16k`
+- `run_split_claim_graph_offline`
 
 Current long-form split pipeline: `run_split_claim_pipeline` (reusable
 `run_split_claim_evaluation`). It is an **opt-in production evaluation suite**

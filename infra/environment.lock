@@ -1,7 +1,7 @@
 # Benchmark environment contract — observed from a working local stack.
 # Do not auto-update digests to match a different installed environment.
 
-python: "3.14.7"
+python: "3.14.8"
 
 ollama:
   version: "0.40.5"
@@ -10,7 +10,7 @@ models:
   # SUT / generation model (AnythingLLM chat + existing simple semantic judge)
   qwen3:8b:
     digest: "sha256:500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41"
-  # Long-form claim-level judge model
+  # Historical monolithic-judge comparison model (not the current split pipeline)
   gemma3:12b:
     digest: "sha256:b92b218582c521ba287f38f1d6057dcd3c6cbff036f13cac97b5d861f5e58ec3"
   nomic-embed-text:latest:

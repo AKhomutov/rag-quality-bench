@@ -349,7 +349,7 @@ ACTUAL_QWEN="$(normalize_digest "$(actual_model_digest 'qwen3:8b')")"
 print_check "qwen3:8b (SUT/generation)" "$EXPECTED_QWEN_DIGEST" "$ACTUAL_QWEN" "  "
 
 ACTUAL_GEMMA="$(normalize_digest "$(actual_model_digest 'gemma3:12b')")"
-print_check "gemma3:12b (claim-level judge)" "$EXPECTED_GEMMA_DIGEST" "$ACTUAL_GEMMA" "  "
+print_check "gemma3:12b (historical comparison)" "$EXPECTED_GEMMA_DIGEST" "$ACTUAL_GEMMA" "  "
 
 ACTUAL_NOMIC="$(normalize_digest "$(actual_model_digest 'nomic-embed-text:latest')")"
 print_check "nomic-embed-text:latest" "$EXPECTED_NOMIC_DIGEST" "$ACTUAL_NOMIC" "  "

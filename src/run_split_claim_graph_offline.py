@@ -1,6 +1,7 @@
-"""Apply dependency-graph normalization offline to a saved split-claim summary.
+"""HISTORICAL / DIAGNOSTIC tooling — offline dependency-graph normalization.
 
-No Ollama / live model calls.
+Apply deterministic SCC cycle normalization to a saved split-claim summary.
+No Ollama / live model calls. Not part of normal ``run_evaluations`` flow.
 """
 
 from __future__ import annotations

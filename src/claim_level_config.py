@@ -1,6 +1,11 @@
-"""Configuration for the long-form claim-level judge only.
+"""Central config for claim-level / long-form judge experiments and the split pipeline.
 
-The existing simple semantic judge continues to use JUDGE_MODEL (qwen3:8b).
+Authoritative Python pins for model tags, digests, num_ctx, and batch sizes.
+Must stay aligned with ``infra/environment.lock`` (enforced by unit tests).
+
+``CLAIM_LEVEL_JUDGE_MODEL`` (gemma3:12b) is the historical monolithic comparison model.
+The current split pipeline uses ``SUT_GENERATION_MODEL`` (qwen3:8b).
+The suite semantic judge uses ``JUDGE_MODEL`` in ``clients.ollama_client`` (same tag).
 """
 
 from __future__ import annotations

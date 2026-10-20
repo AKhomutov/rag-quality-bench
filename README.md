@@ -15,7 +15,8 @@ Current evaluations cover:
 - conversation poisoning across multiple turns;
 - conflicting authoritative documents;
 - agent source priority and tool selection;
-- repeated agent trials with pass-rate tracking.
+- repeated agent trials with pass-rate tracking;
+- long-form mixed-truth policy poisoning with claim-level semantic auditing.
 
 The default setup uses:
 
@@ -176,14 +177,17 @@ required: 90%
 fixtures/
   datasets/
   documents/
+  prompts/
 
 src/
   clients/
   evaluators/
+  judges/
 
 tests/
 scripts/
 infra/
+docs/
 reports/
 ```
 
@@ -193,6 +197,8 @@ reports/
 
 `src/evaluators/` contains the evaluation logic for each suite.
 
+`src/judges/` contains LLM judge prompts and schemas (semantic suite and claim-level pipeline).
+
 AnythingLLM workspaces are created through the API for each required corpus and removed after the run.
 
 ## Evaluation oracles
@@ -200,7 +206,7 @@ AnythingLLM workspaces are created through the API for each required corpus and 
 Deterministic assertions are used for exact factual, structural, and tool-use checks.
 Semantic adversarial and conflicting-evidence cases are evaluated with the LLM judge against explicit reference facts.
 
-The long-form severity case is a separate experiment about the judge itself. Its architecture is documented below.
+The long-form severity case is an opt-in suite (`--include-long-form`) about claim-level auditing. Its architecture is documented below.
 
 ## Evaluator architecture experiment: from monolithic judge to claim-level pipeline
 
@@ -264,7 +270,7 @@ Both models judged the same SHA-pinned candidate. The experiment showed that run
 
 | | `qwen3:8b` | `gemma3:12b` |
 | --- | --- | --- |
-| Role here | Lightweight local model. Current split-pipeline judge. | Independent stronger local candidate for the monolithic judge. |
+| Role here | Lightweight local model. Current split-pipeline judge. | Larger independent local comparison model for the monolithic judge. |
 | Implicit ~4k context | Often treated fake severity levels as supported. | Truncated (`done_reason = length`). |
 | Explicit 16K context | Full completion. Fake severities rejected. Derived claims and provenance issues detected. No internal fact-ID inconsistencies in the control run. | Valid semantic FAIL. Most poisoned severity claims rejected. |
 | Local cost | Lighter on this RTX 4080 Super setup. | Heavier and slower on the same GPU. |
@@ -482,7 +488,7 @@ infra/environment.lock
 
 It currently records:
 
-- Python `3.14.7`;
+- Python `3.14.8`;
 - Ollama `0.40.5`;
 - exact digests for `qwen3:8b`, `gemma3:12b`, and `nomic-embed-text`;
 - an immutable AnythingLLM container image digest.
@@ -534,20 +540,20 @@ Run the evaluations:
 ./scripts/run-evals.sh
 ```
 
-This is the standard fast path (baseline + agent suites). Consolidated reports are written to:
+Default = fast/current suites (baseline + agent; adversarial/conflicting are semantic-only tooling outside this consolidated path). Reports:
 
 ```text
 reports/evaluation_report.json
 reports/evaluation_report.md
 ```
 
-To also run the slower long-form mixed-truth claim audit:
+Opt-in slower split long-form audit:
 
 ```bash
 ./scripts/run-evals.sh --include-long-form
 ```
 
-Includes the slower long-form mixed-truth claim audit. This suite uses the split semantic pipeline and is opt-in because it requires multiple local-model inference calls. Results are added to the same consolidated JSON/Markdown reports; detailed traces remain under `reports/judge_debug/`.
+Flag = slower split long-form claim audit (`claim extraction → batched base → batched dependency → graph normalization → aggregation`). Results go into the same consolidated JSON/Markdown reports; detailed traces remain under `reports/judge_debug/`.
 
 Stop AnythingLLM:
 
