@@ -20,6 +20,10 @@ CLAIM_LEVEL_NUM_CTX = 16384
 SPLIT_CLAIM_PIPELINE_KEEP_ALIVE: int = -1
 SPLIT_CLAIM_PIPELINE_TEMPERATURE = 0
 
+# Sequential batch sizes for Stage 2 / 2B (performance only; no GPU parallelism).
+SPLIT_BASE_BATCH_SIZE = 6
+SPLIT_DEPENDENCY_BATCH_SIZE = 8
+
 # SUT / generation model (also used for Qwen claim-level A/B controls / split pipeline).
 SUT_GENERATION_MODEL = "qwen3:8b"
 SUT_GENERATION_MODEL_DIGEST = (

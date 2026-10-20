@@ -7,7 +7,9 @@ from claim_level_config import (
     CLAIM_LEVEL_JUDGE_MODEL,
     CLAIM_LEVEL_JUDGE_MODEL_DIGEST,
     CLAIM_LEVEL_NUM_CTX,
+    SPLIT_BASE_BATCH_SIZE,
     SPLIT_CLAIM_PIPELINE_KEEP_ALIVE,
+    SPLIT_DEPENDENCY_BATCH_SIZE,
 )
 from clients.ollama_client import JUDGE_MODEL, build_generate_request_body
 from workspace_setup import PROJECT_ROOT
@@ -98,6 +100,11 @@ def test_split_pipeline_keep_alive_stays_loaded() -> None:
     assert isinstance(options_raw, dict)
     options = cast(dict[str, object], options_raw)
     assert options["num_ctx"] == 16384
+
+
+def test_split_pipeline_batch_sizes() -> None:
+    assert SPLIT_BASE_BATCH_SIZE == 6
+    assert SPLIT_DEPENDENCY_BATCH_SIZE == 8
 
 
 def test_debug_trace_includes_model_digest_and_keep_alive() -> None:

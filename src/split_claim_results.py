@@ -190,17 +190,23 @@ def parse_extracted_claims(text: str) -> list[ExtractedClaim]:
     return claims
 
 
-def parse_base_claim_judgement(text: str, *, expected_claim_id: str) -> BaseClaimJudgement:
-    try:
-        raw: object = json.loads(text)
-    except json.JSONDecodeError as exc:
-        msg = f"base claim judge output is not valid JSON: {exc}"
-        raise ValueError(msg) from exc
+def partition_into_batches[T](items: list[T], batch_size: int) -> list[list[T]]:
+    if batch_size < 1:
+        msg = f"batch_size must be >= 1, got {batch_size}"
+        raise ValueError(msg)
+    if not items:
+        return []
+    return [items[index : index + batch_size] for index in range(0, len(items), batch_size)]
 
-    context = f"base claim {expected_claim_id}"
-    payload = _as_object(raw, context)
+
+def _parse_base_claim_payload(
+    payload: dict[str, object],
+    *,
+    context: str,
+    expected_claim_id: str | None = None,
+) -> BaseClaimJudgement:
     claim_id = _require_non_empty_string(payload, "claim_id", context)
-    if claim_id != expected_claim_id:
+    if expected_claim_id is not None and claim_id != expected_claim_id:
         msg = f"{context}: claim_id mismatch: expected {expected_claim_id!r}, got {claim_id!r}"
         raise ValueError(msg)
 
@@ -224,22 +230,15 @@ def parse_base_claim_judgement(text: str, *, expected_claim_id: str) -> BaseClai
     )
 
 
-def parse_dependency_judgement(
-    text: str,
+def _parse_dependency_payload(
+    payload: dict[str, object],
     *,
-    expected_claim_id: str,
+    context: str,
+    expected_claim_id: str | None,
     known_claim_ids: frozenset[str],
 ) -> DependencyJudgement:
-    try:
-        raw: object = json.loads(text)
-    except json.JSONDecodeError as exc:
-        msg = f"dependency judge output is not valid JSON: {exc}"
-        raise ValueError(msg) from exc
-
-    context = f"dependency {expected_claim_id}"
-    payload = _as_object(raw, context)
     claim_id = _require_non_empty_string(payload, "claim_id", context)
-    if claim_id != expected_claim_id:
+    if expected_claim_id is not None and claim_id != expected_claim_id:
         msg = f"{context}: claim_id mismatch: expected {expected_claim_id!r}, got {claim_id!r}"
         raise ValueError(msg)
 
@@ -258,7 +257,7 @@ def parse_dependency_judgement(
         if dep_id not in known_claim_ids:
             msg = f"{context}: depends_on contains unknown claim_id {dep_id!r}"
             raise ValueError(msg)
-        if dep_id == expected_claim_id:
+        if dep_id == claim_id:
             msg = f"{context}: depends_on must not include the current claim_id"
             raise ValueError(msg)
 
@@ -268,6 +267,142 @@ def parse_dependency_judgement(
         depends_on=depends_on,
         explanation=_require_non_empty_string(payload, "explanation", context),
     )
+
+
+def _require_exact_claim_coverage(
+    *,
+    expected_ids: frozenset[str],
+    observed_ids: list[str],
+    context: str,
+) -> None:
+    observed_set = set(observed_ids)
+    if len(observed_ids) != len(observed_set):
+        duplicates = sorted(
+            {claim_id for claim_id in observed_ids if observed_ids.count(claim_id) > 1}
+        )
+        msg = f"{context}: duplicate claim IDs: {duplicates}"
+        raise ValueError(msg)
+    missing = sorted(expected_ids - observed_set)
+    unknown = sorted(observed_set - expected_ids)
+    if missing or unknown:
+        msg = f"{context}: claim ID coverage mismatch; missing={missing}, unknown={unknown}"
+        raise ValueError(msg)
+
+
+def parse_base_claim_judgement(text: str, *, expected_claim_id: str) -> BaseClaimJudgement:
+    try:
+        raw: object = json.loads(text)
+    except json.JSONDecodeError as exc:
+        msg = f"base claim judge output is not valid JSON: {exc}"
+        raise ValueError(msg) from exc
+
+    context = f"base claim {expected_claim_id}"
+    payload = _as_object(raw, context)
+    return _parse_base_claim_payload(
+        payload,
+        context=context,
+        expected_claim_id=expected_claim_id,
+    )
+
+
+def parse_base_claim_batch(
+    text: str,
+    *,
+    expected_claim_ids: frozenset[str],
+) -> list[BaseClaimJudgement]:
+    try:
+        raw: object = json.loads(text)
+    except json.JSONDecodeError as exc:
+        msg = f"base claim batch output is not valid JSON: {exc}"
+        raise ValueError(msg) from exc
+
+    context = "base claim batch"
+    payload = _as_object(raw, context)
+    judgements_raw = payload.get("judgements")
+    if not isinstance(judgements_raw, list):
+        msg = f"{context}: expected list field 'judgements', got {type(judgements_raw).__name__}"
+        raise TypeError(msg)
+
+    judgements: list[BaseClaimJudgement] = []
+    observed_ids: list[str] = []
+    for index, item in enumerate(cast(list[object], judgements_raw)):
+        item_context = f"{context}.judgements[{index}]"
+        item_payload = _as_object(item, item_context)
+        judgement = _parse_base_claim_payload(item_payload, context=item_context)
+        judgements.append(judgement)
+        observed_ids.append(judgement.claim_id)
+
+    _require_exact_claim_coverage(
+        expected_ids=expected_claim_ids,
+        observed_ids=observed_ids,
+        context=context,
+    )
+    return judgements
+
+
+def parse_dependency_judgement(
+    text: str,
+    *,
+    expected_claim_id: str,
+    known_claim_ids: frozenset[str],
+) -> DependencyJudgement:
+    try:
+        raw: object = json.loads(text)
+    except json.JSONDecodeError as exc:
+        msg = f"dependency judge output is not valid JSON: {exc}"
+        raise ValueError(msg) from exc
+
+    context = f"dependency {expected_claim_id}"
+    payload = _as_object(raw, context)
+    return _parse_dependency_payload(
+        payload,
+        context=context,
+        expected_claim_id=expected_claim_id,
+        known_claim_ids=known_claim_ids,
+    )
+
+
+def parse_dependency_batch(
+    text: str,
+    *,
+    expected_claim_ids: frozenset[str],
+    known_claim_ids: frozenset[str],
+) -> list[DependencyJudgement]:
+    try:
+        raw: object = json.loads(text)
+    except json.JSONDecodeError as exc:
+        msg = f"dependency batch output is not valid JSON: {exc}"
+        raise ValueError(msg) from exc
+
+    context = "dependency batch"
+    payload = _as_object(raw, context)
+    dependencies_raw = payload.get("dependencies")
+    if not isinstance(dependencies_raw, list):
+        msg = (
+            f"{context}: expected list field 'dependencies', got {type(dependencies_raw).__name__}"
+        )
+        raise TypeError(msg)
+
+    judgements: list[DependencyJudgement] = []
+    observed_ids: list[str] = []
+    for index, item in enumerate(cast(list[object], dependencies_raw)):
+        item_context = f"{context}.dependencies[{index}]"
+        item_payload = _as_object(item, item_context)
+        judgement = _parse_dependency_payload(
+            item_payload,
+            context=item_context,
+            expected_claim_id=None,
+            known_claim_ids=known_claim_ids,
+        )
+        judgements.append(judgement)
+        observed_ids.append(judgement.claim_id)
+
+    _require_exact_claim_coverage(
+        expected_ids=expected_claim_ids,
+        observed_ids=observed_ids,
+        context=context,
+    )
+    return judgements
 
 
 def build_final_judgements(

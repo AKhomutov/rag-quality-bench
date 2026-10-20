@@ -25,8 +25,8 @@ def create_split_claim_debug_run_dir(reports_root: Path | None = None) -> Path:
     root = REPORTS_ROOT if reports_root is None else reports_root
     timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
     run_dir = root / "judge_debug" / f"{timestamp}_split_claim"
-    (run_dir / "claims").mkdir(parents=True, exist_ok=True)
-    (run_dir / "dependencies").mkdir(parents=True, exist_ok=True)
+    (run_dir / "base_batches").mkdir(parents=True, exist_ok=True)
+    (run_dir / "dependency_batches").mkdir(parents=True, exist_ok=True)
     return run_dir
 
 
@@ -78,13 +78,14 @@ def write_extraction_artifact(
     _write_json(run_dir / "extraction.json", payload)
 
 
-def write_base_claim_artifact(
+def write_base_batch_artifact(
     run_dir: Path,
     *,
-    claim: ExtractedClaim,
+    batch_index: int,
+    claims: list[ExtractedClaim],
     prompt: str,
     generation: OllamaGenerationResult,
-    judgement: BaseClaimJudgement,
+    judgements: list[BaseClaimJudgement],
     model: str,
     model_digest: str,
     temperature: int,
@@ -93,9 +94,10 @@ def write_base_claim_artifact(
     wall_time_seconds: float,
 ) -> None:
     payload: dict[str, object] = {
-        "stage": "base_claim_judge",
-        "claim_id": claim.claim_id,
-        "extracted_claim": cast(dict[str, object], asdict(claim)),
+        "stage": "base_claim_batch",
+        "batch_index": batch_index,
+        "claim_ids": [claim.claim_id for claim in claims],
+        "extracted_claims": [cast(dict[str, object], asdict(item)) for item in claims],
         "model": model,
         "model_digest": model_digest,
         "temperature": temperature,
@@ -104,19 +106,20 @@ def write_base_claim_artifact(
         "prompt": prompt,
         "raw_response": generation.response,
         "completion_metadata": _generation_to_object(generation),
-        "parsed": cast(dict[str, object], asdict(judgement)),
+        "parsed_judgements": [cast(dict[str, object], asdict(item)) for item in judgements],
         "wall_time_seconds": wall_time_seconds,
     }
-    _write_json(run_dir / "claims" / f"{claim.claim_id}.json", payload)
+    _write_json(run_dir / "base_batches" / f"batch_{batch_index:03d}.json", payload)
 
 
-def write_dependency_artifact(
+def write_dependency_batch_artifact(
     run_dir: Path,
     *,
-    claim: ExtractedClaim,
+    batch_index: int,
+    claims: list[ExtractedClaim],
     prompt: str,
     generation: OllamaGenerationResult,
-    judgement: DependencyJudgement,
+    judgements: list[DependencyJudgement],
     model: str,
     model_digest: str,
     temperature: int,
@@ -125,9 +128,10 @@ def write_dependency_artifact(
     wall_time_seconds: float,
 ) -> None:
     payload: dict[str, object] = {
-        "stage": "dependency_judge",
-        "claim_id": claim.claim_id,
-        "extracted_claim": cast(dict[str, object], asdict(claim)),
+        "stage": "dependency_batch",
+        "batch_index": batch_index,
+        "claim_ids": [claim.claim_id for claim in claims],
+        "extracted_claims": [cast(dict[str, object], asdict(item)) for item in claims],
         "model": model,
         "model_digest": model_digest,
         "temperature": temperature,
@@ -136,10 +140,10 @@ def write_dependency_artifact(
         "prompt": prompt,
         "raw_response": generation.response,
         "completion_metadata": _generation_to_object(generation),
-        "parsed": cast(dict[str, object], asdict(judgement)),
+        "parsed_dependencies": [cast(dict[str, object], asdict(item)) for item in judgements],
         "wall_time_seconds": wall_time_seconds,
     }
-    _write_json(run_dir / "dependencies" / f"{claim.claim_id}.json", payload)
+    _write_json(run_dir / "dependency_batches" / f"batch_{batch_index:03d}.json", payload)
 
 
 def write_summary_artifact(
@@ -154,7 +158,12 @@ def write_summary_artifact(
     base_judge_wall_time: float,
     dependency_wall_time: float,
     overall_wall_time: float,
-    average_base_claim_duration: float,
+    base_batch_count: int,
+    dependency_batch_count: int,
+    dependency_eligible_count: int,
+    average_base_batch_duration: float,
+    average_claim_equivalent_base_time: float,
+    average_dependency_batch_duration: float,
     execution_errors: list[str],
 ) -> None:
     payload: dict[str, object] = {
@@ -167,7 +176,12 @@ def write_summary_artifact(
         "base_judge_wall_time_seconds": base_judge_wall_time,
         "dependency_wall_time_seconds": dependency_wall_time,
         "overall_wall_time_seconds": overall_wall_time,
-        "average_base_claim_duration_seconds": average_base_claim_duration,
+        "base_batch_count": base_batch_count,
+        "dependency_batch_count": dependency_batch_count,
+        "dependency_eligible_count": dependency_eligible_count,
+        "average_base_batch_duration_seconds": average_base_batch_duration,
+        "average_claim_equivalent_base_time_seconds": average_claim_equivalent_base_time,
+        "average_dependency_batch_duration_seconds": average_dependency_batch_duration,
         "execution_errors": execution_errors,
     }
     _write_json(run_dir / "summary.json", payload)
