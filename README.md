@@ -534,6 +534,21 @@ Run the evaluations:
 ./scripts/run-evals.sh
 ```
 
+This is the standard fast path (baseline + agent suites). Consolidated reports are written to:
+
+```text
+reports/evaluation_report.json
+reports/evaluation_report.md
+```
+
+To also run the slower long-form mixed-truth claim audit:
+
+```bash
+./scripts/run-evals.sh --include-long-form
+```
+
+Includes the slower long-form mixed-truth claim audit. This suite uses the split semantic pipeline and is opt-in because it requires multiple local-model inference calls. Results are added to the same consolidated JSON/Markdown reports; detailed traces remain under `reports/judge_debug/`.
+
 Stop AnythingLLM:
 
 ```bash

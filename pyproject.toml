@@ -39,6 +39,7 @@ py-modules = [
   "json_types",
   "long_form_severity_facts",
   "long_form_severity_prompt",
+  "long_form_claim_audit_results",
   "workspace_setup",
   "rag_cases",
   "adversarial_cases",

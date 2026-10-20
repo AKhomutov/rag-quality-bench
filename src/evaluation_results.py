@@ -23,3 +23,7 @@ class EvaluationResult:
     failures: list[str]
     tools_used: list[str]
     trial_summary: TrialSummary | None
+    # Optional fields for suites that distinguish ERROR from semantic FAIL.
+    execution_error: str | None = None
+    long_form_metrics: dict[str, object] | None = None
+    debug_path: str | None = None

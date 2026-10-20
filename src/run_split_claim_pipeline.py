@@ -1,6 +1,9 @@
-"""Split claim pipeline: extract → batched base judge → batched dependency → aggregate.
+"""Split claim pipeline: extract → batched base judge → dependency → graph → aggregate.
 
 Uses the fixed candidate answer only (SUT is not called).
+
+Reusable entry: ``run_split_claim_evaluation``.
+Standalone CLI: ``python -m run_split_claim_pipeline``.
 """
 
 from __future__ import annotations
@@ -8,6 +11,7 @@ from __future__ import annotations
 import subprocess
 import time
 from dataclasses import dataclass
+from pathlib import Path
 
 from claim_level_config import (
     CLAIM_LEVEL_NUM_CTX,
@@ -33,6 +37,7 @@ from judges.per_claim_judge import (
     build_dependency_batch_json_schema,
     build_dependency_batch_judge_prompt,
 )
+from long_form_claim_audit_results import LongFormClaimAuditResult
 from long_form_severity_facts import reference_facts_as_lines
 from long_form_severity_prompt import (
     AUTHORITATIVE_DOCUMENT_PATH,
@@ -72,19 +77,6 @@ PREVIOUS_TRACE_PATH = (
 )
 GENERATE_TIMEOUT_SECONDS = 900
 FAKE_SEVERITY_LABELS = ("Severity 0", "Severity 2.5", "Severity 5")
-PREVIOUS_OVERALL_SECONDS = 549.0
-PREVIOUS_BASE_CALLS = 54
-PREVIOUS_DEPENDENCY_CALLS = 15
-PREVIOUS_METRICS = {
-    "claims": 54,
-    "supported": 26,
-    "contradicted": 13,
-    "not_in_evidence": 5,
-    "derived": 10,
-    "provenance": 20,
-    "grounded": 0.481,
-    "verdict": "FAIL",
-}
 
 
 @dataclass(frozen=True)
@@ -130,7 +122,14 @@ def _generate(
     )
 
 
-def _print_generation_metadata(label: str, timed: TimedGeneration) -> None:
+def _log(verbose: bool, message: str) -> None:
+    if verbose:
+        print(message)
+
+
+def _print_generation_metadata(label: str, timed: TimedGeneration, *, verbose: bool) -> None:
+    if not verbose:
+        return
     gen = timed.generation
     print(f"=== {label} completion metadata ===")
     print(f"done: {gen.done}")
@@ -161,81 +160,115 @@ def _ollama_ps_output() -> str:
     return completed.stdout.strip() or completed.stderr.strip() or "(empty)"
 
 
-def main() -> None:
+def _error_result(
+    *,
+    prompt_sha256: str,
+    candidate_sha256: str,
+    debug_path: Path,
+    duration_seconds: float,
+    execution_error: str,
+) -> LongFormClaimAuditResult:
+    return LongFormClaimAuditResult(
+        case_id=CASE_ID,
+        status="ERROR",
+        total_claims=0,
+        supported_count=0,
+        contradicted_count=0,
+        not_in_evidence_count=0,
+        derived_count=0,
+        provenance_issue_count=0,
+        grounded_claim_rate=0.0,
+        raw_dependency_edge_count=0,
+        normalized_dependency_edge_count=0,
+        dependency_cycle_count=0,
+        execution_error=execution_error,
+        duration_seconds=duration_seconds,
+        debug_path=str(debug_path),
+        judge_model=SUT_GENERATION_MODEL,
+        judge_model_digest=SUT_GENERATION_MODEL_DIGEST,
+        num_ctx=CLAIM_LEVEL_NUM_CTX,
+        candidate_sha256=candidate_sha256,
+        prompt_sha256=prompt_sha256,
+        failure_summary=[execution_error],
+    )
+
+
+def run_split_claim_evaluation(*, verbose: bool = True) -> LongFormClaimAuditResult:
+    """Run the current split claim pipeline once and return a concise suite result."""
     overall_started = time.perf_counter()
-    execution_errors: list[str] = []
     client = OllamaClient()
-    extraction_wall = 0.0
-    base_wall = 0.0
-    dependency_wall = 0.0
-    extracted: list[ExtractedClaim] = []
-    base_by_id: dict[str, BaseClaimJudgement] = {}
-    dependency_by_id: dict[str, DependencyJudgement] = {}
-    base_batch_durations: list[float] = []
-    dependency_batch_durations: list[float] = []
-    base_batches: list[list[ExtractedClaim]] = []
-    dependency_batches: list[list[ExtractedClaim]] = []
-    eligible: list[ExtractedClaim] = []
     run_dir = create_split_claim_debug_run_dir()
+    prompt_sha = ""
     candidate_sha256 = ""
-    candidate_length = 0
-    extraction_timed: TimedGeneration | None = None
 
     try:
-        prompt_sha = assert_prompt_fixture_integrity()
-        original_user_prompt = load_sut_prompt()
-        authoritative_source = AUTHORITATIVE_DOCUMENT_PATH.read_text(encoding="utf-8")
-        reference_facts = reference_facts_as_lines()
+        try:
+            prompt_sha = assert_prompt_fixture_integrity()
+            original_user_prompt = load_sut_prompt()
+            authoritative_source = AUTHORITATIVE_DOCUMENT_PATH.read_text(encoding="utf-8")
+            reference_facts = reference_facts_as_lines()
 
-        candidate_answer = load_identical_candidate_answer(PREVIOUS_TRACE_PATH)
-        candidate_sha256 = sha256_text(candidate_answer)
-        candidate_length = len(candidate_answer)
-        assert_fixed_candidate_identity(candidate_answer, candidate_sha256)
+            candidate_answer = load_identical_candidate_answer(PREVIOUS_TRACE_PATH)
+            candidate_sha256 = sha256_text(candidate_answer)
+            assert_fixed_candidate_identity(candidate_answer, candidate_sha256)
+        except (OSError, TypeError, ValueError) as exc:
+            msg = f"fixed candidate / fixture validation failed: {exc}"
+            _log(verbose, f"EXECUTION ERROR: {msg}")
+            return _error_result(
+                prompt_sha256=prompt_sha,
+                candidate_sha256=candidate_sha256,
+                debug_path=run_dir,
+                duration_seconds=time.perf_counter() - overall_started,
+                execution_error=msg,
+            )
 
-        print(f"case: {CASE_ID}")
-        print(f"prompt fixture SHA-256: {prompt_sha}")
-        print()
-        print("Candidate source:")
-        print(PREVIOUS_TRACE_PATH.relative_to(PROJECT_ROOT))
-        print()
-        print("Candidate SHA-256:")
-        print(candidate_sha256)
-        print()
-        print("Candidate length:")
-        print(candidate_length)
-        print()
-        print("SUT was NOT called.")
-        print(f"Judge model: {SUT_GENERATION_MODEL}")
-        print(f"Judge digest: {SUT_GENERATION_MODEL_DIGEST}")
-        print(f"num_ctx: {CLAIM_LEVEL_NUM_CTX}")
-        print(f"temperature: {SPLIT_CLAIM_PIPELINE_TEMPERATURE}")
-        print(f"keep_alive (during run): {SPLIT_CLAIM_PIPELINE_KEEP_ALIVE}")
-        print(f"SPLIT_BASE_BATCH_SIZE: {SPLIT_BASE_BATCH_SIZE}")
-        print(f"SPLIT_DEPENDENCY_BATCH_SIZE: {SPLIT_DEPENDENCY_BATCH_SIZE}")
-        print()
-        print(f"Debug artifacts: {run_dir}")
-        print()
+        _log(verbose, f"case: {CASE_ID}")
+        _log(verbose, f"prompt fixture SHA-256: {prompt_sha}")
+        _log(verbose, f"Candidate SHA-256: {candidate_sha256}")
+        _log(verbose, f"Candidate length: {len(candidate_answer)}")
+        _log(verbose, "SUT was NOT called.")
+        _log(verbose, f"Judge model: {SUT_GENERATION_MODEL}")
+        _log(verbose, f"num_ctx: {CLAIM_LEVEL_NUM_CTX}")
+        _log(verbose, f"Debug artifacts: {run_dir}")
+        _log(verbose, "")
 
-        # --- Stage 1: extraction ---
         extraction_prompt = build_claim_extraction_prompt(
             candidate_answer=candidate_answer,
             original_user_prompt=original_user_prompt,
         )
-        extraction_timed = _generate(
-            client,
-            prompt=extraction_prompt,
-            json_schema=build_claim_extraction_json_schema(),
-        )
+        try:
+            extraction_timed = _generate(
+                client,
+                prompt=extraction_prompt,
+                json_schema=build_claim_extraction_json_schema(),
+            )
+        except Exception as exc:
+            msg = f"extraction generate failed: {exc}"
+            _log(verbose, f"EXECUTION ERROR: {msg}")
+            return _error_result(
+                prompt_sha256=prompt_sha,
+                candidate_sha256=candidate_sha256,
+                debug_path=run_dir,
+                duration_seconds=time.perf_counter() - overall_started,
+                execution_error=msg,
+            )
+
         extraction_wall = extraction_timed.wall_time_seconds
-        _print_generation_metadata("extraction", extraction_timed)
+        _print_generation_metadata("extraction", extraction_timed, verbose=verbose)
 
         try:
             extracted_raw = parse_extracted_claims(extraction_timed.generation.response)
             extracted = canonicalize_extracted_claim_ids(extracted_raw)
         except (TypeError, ValueError) as exc:
-            execution_errors.append(f"extraction parse error: {exc}")
-            print(f"EXECUTION ERROR (extraction): {exc}")
-            raise SystemExit(1) from exc
+            msg = f"extraction parse error: {exc}"
+            _log(verbose, f"EXECUTION ERROR: {msg}")
+            return _error_result(
+                prompt_sha256=prompt_sha,
+                candidate_sha256=candidate_sha256,
+                debug_path=run_dir,
+                duration_seconds=time.perf_counter() - overall_started,
+                execution_error=msg,
+            )
 
         write_extraction_artifact(
             run_dir,
@@ -250,18 +283,21 @@ def main() -> None:
             wall_time_seconds=extraction_timed.wall_time_seconds,
         )
 
-        print(f"extracted claim count: {len(extracted)}")
-        print("extracted claims:")
-        for item in extracted:
-            print(f"  {item.claim_id}: {item.claim}")
-        print()
+        _log(verbose, f"extracted claim count: {len(extracted)}")
+        if verbose:
+            for item in extracted:
+                print(f"  {item.claim_id}: {item.claim}")
+            print()
 
         extracted_by_id = {item.claim_id: item for item in extracted}
+        base_by_id: dict[str, BaseClaimJudgement] = {}
+        dependency_by_id: dict[str, DependencyJudgement] = {}
+        base_batch_durations: list[float] = []
+        dependency_batch_durations: list[float] = []
 
-        # --- Stage 2: batched base judge ---
         base_started = time.perf_counter()
         base_batches = partition_into_batches(extracted, SPLIT_BASE_BATCH_SIZE)
-        print(f"base batch count: {len(base_batches)}")
+        _log(verbose, f"base batch count: {len(base_batches)}")
 
         for batch_index, batch in enumerate(base_batches, start=1):
             base_prompt = build_base_claim_batch_judge_prompt(
@@ -269,11 +305,22 @@ def main() -> None:
                 reference_facts=reference_facts,
                 claims=batch,
             )
-            timed = _generate(
-                client,
-                prompt=base_prompt,
-                json_schema=build_base_claim_batch_json_schema(),
-            )
+            try:
+                timed = _generate(
+                    client,
+                    prompt=base_prompt,
+                    json_schema=build_base_claim_batch_json_schema(),
+                )
+            except Exception as exc:
+                msg = f"base batch {batch_index:03d} generate failed: {exc}"
+                _log(verbose, f"EXECUTION ERROR: {msg}")
+                return _error_result(
+                    prompt_sha256=prompt_sha,
+                    candidate_sha256=candidate_sha256,
+                    debug_path=run_dir,
+                    duration_seconds=time.perf_counter() - overall_started,
+                    execution_error=msg,
+                )
             base_batch_durations.append(timed.wall_time_seconds)
             expected_ids = frozenset(claim.claim_id for claim in batch)
             try:
@@ -283,9 +330,14 @@ def main() -> None:
                 )
             except (TypeError, ValueError) as exc:
                 msg = f"base batch {batch_index:03d} parse error: {exc}"
-                execution_errors.append(msg)
-                print(f"EXECUTION ERROR: {msg}")
-                raise SystemExit(1) from exc
+                _log(verbose, f"EXECUTION ERROR: {msg}")
+                return _error_result(
+                    prompt_sha256=prompt_sha,
+                    candidate_sha256=candidate_sha256,
+                    debug_path=run_dir,
+                    duration_seconds=time.perf_counter() - overall_started,
+                    execution_error=msg,
+                )
 
             for base_judgement in base_judgements:
                 base_by_id[base_judgement.claim_id] = base_judgement
@@ -304,18 +356,13 @@ def main() -> None:
                 keep_alive=SPLIT_CLAIM_PIPELINE_KEEP_ALIVE,
                 wall_time_seconds=timed.wall_time_seconds,
             )
-            statuses = ", ".join(f"{item.claim_id}={item.status}" for item in base_judgements)
-            print(f"base batch {batch_index:03d}: {statuses} ({timed.wall_time_seconds:.1f}s)")
+            if verbose:
+                statuses = ", ".join(f"{item.claim_id}={item.status}" for item in base_judgements)
+                print(f"base batch {batch_index:03d}: {statuses} ({timed.wall_time_seconds:.1f}s)")
 
         base_wall = time.perf_counter() - base_started
-        print()
-        print("base classification counts:")
-        for status in ("supported", "contradicted", "not_in_evidence"):
-            count = sum(1 for judgement in base_by_id.values() if judgement.status == status)
-            print(f"  {status}: {count}")
-        print()
+        _log(verbose, "")
 
-        # --- Stage 2B: batched dependency ---
         dependency_started = time.perf_counter()
         known_ids = frozenset(extracted_by_id)
         premise_pool = unsupported_premise_pool(list(base_by_id.values()))
@@ -324,12 +371,11 @@ def main() -> None:
             for judgement in base_by_id.values()
             if judgement.status == "not_in_evidence"
         ]
-        # Preserve extracted order for eligible claims.
         eligible_ids = {claim.claim_id for claim in eligible}
         eligible = [claim for claim in extracted if claim.claim_id in eligible_ids]
         dependency_batches = partition_into_batches(eligible, SPLIT_DEPENDENCY_BATCH_SIZE)
-        print(f"dependency eligible count: {len(eligible)}")
-        print(f"dependency batch count: {len(dependency_batches)}")
+        _log(verbose, f"dependency eligible count: {len(eligible)}")
+        _log(verbose, f"dependency batch count: {len(dependency_batches)}")
 
         premise_pairs: list[tuple[ExtractedClaim, BaseClaimJudgement]] = [
             (extracted_by_id[premise.claim_id], premise) for premise in premise_pool
@@ -340,11 +386,22 @@ def main() -> None:
                 current_claims=batch,
                 unsupported_premises=premise_pairs,
             )
-            timed = _generate(
-                client,
-                prompt=dep_prompt,
-                json_schema=build_dependency_batch_json_schema(),
-            )
+            try:
+                timed = _generate(
+                    client,
+                    prompt=dep_prompt,
+                    json_schema=build_dependency_batch_json_schema(),
+                )
+            except Exception as exc:
+                msg = f"dependency batch {batch_index:03d} generate failed: {exc}"
+                _log(verbose, f"EXECUTION ERROR: {msg}")
+                return _error_result(
+                    prompt_sha256=prompt_sha,
+                    candidate_sha256=candidate_sha256,
+                    debug_path=run_dir,
+                    duration_seconds=time.perf_counter() - overall_started,
+                    execution_error=msg,
+                )
             dependency_batch_durations.append(timed.wall_time_seconds)
             expected_ids = frozenset(claim.claim_id for claim in batch)
             try:
@@ -355,9 +412,14 @@ def main() -> None:
                 )
             except (TypeError, ValueError) as exc:
                 msg = f"dependency batch {batch_index:03d} parse error: {exc}"
-                execution_errors.append(msg)
-                print(f"EXECUTION ERROR: {msg}")
-                raise SystemExit(1) from exc
+                _log(verbose, f"EXECUTION ERROR: {msg}")
+                return _error_result(
+                    prompt_sha256=prompt_sha,
+                    candidate_sha256=candidate_sha256,
+                    debug_path=run_dir,
+                    duration_seconds=time.perf_counter() - overall_started,
+                    execution_error=msg,
+                )
 
             for dep_judgement in dep_judgements:
                 dependency_by_id[dep_judgement.claim_id] = dep_judgement
@@ -376,17 +438,31 @@ def main() -> None:
                 keep_alive=SPLIT_CLAIM_PIPELINE_KEEP_ALIVE,
                 wall_time_seconds=timed.wall_time_seconds,
             )
-            statuses = ", ".join(
-                f"{item.claim_id}:derived={item.derived}" for item in dep_judgements
-            )
-            print(
-                f"dependency batch {batch_index:03d}: {statuses} ({timed.wall_time_seconds:.1f}s)"
-            )
+            if verbose:
+                statuses = ", ".join(
+                    f"{item.claim_id}:derived={item.derived}" for item in dep_judgements
+                )
+                print(
+                    f"dependency batch {batch_index:03d}: {statuses} "
+                    f"({timed.wall_time_seconds:.1f}s)"
+                )
 
         dependency_wall = time.perf_counter() - dependency_started
-        print()
+        _log(verbose, "")
 
-        bundle = build_final_judgements(extracted, base_by_id, dependency_by_id)
+        try:
+            bundle = build_final_judgements(extracted, base_by_id, dependency_by_id)
+        except (TypeError, ValueError) as exc:
+            msg = f"dependency graph validation/normalization failed: {exc}"
+            _log(verbose, f"EXECUTION ERROR: {msg}")
+            return _error_result(
+                prompt_sha256=prompt_sha,
+                candidate_sha256=candidate_sha256,
+                debug_path=run_dir,
+                duration_seconds=time.perf_counter() - overall_started,
+                execution_error=msg,
+            )
+
         finals = bundle.finals
         metrics = compute_split_claim_metrics(finals)
         passed = split_claim_passed(finals)
@@ -409,7 +485,7 @@ def main() -> None:
         write_summary_artifact(
             run_dir,
             candidate_sha256=candidate_sha256,
-            candidate_length=candidate_length,
+            candidate_length=len(candidate_answer),
             metrics=metrics,
             passed=passed,
             finals=finals,
@@ -423,128 +499,77 @@ def main() -> None:
             average_base_batch_duration=avg_base_batch,
             average_claim_equivalent_base_time=avg_claim_equiv,
             average_dependency_batch_duration=avg_dep_batch,
-            execution_errors=execution_errors,
+            execution_errors=[],
             dependency_cycle_count=len(bundle.graph.cycles),
             downgraded_claims=bundle.downgraded_claims,
         )
 
-        print("=== Final metrics ===")
-        print(f"Total claims: {metrics.total_claims}")
-        print(f"Supported: {metrics.supported}")
-        print(f"Contradicted: {metrics.contradicted}")
-        print(f"Not in evidence: {metrics.not_in_evidence}")
-        print(f"Derived: {metrics.derived_from_unsupported_claim}")
-        print(f"Provenance issues: {metrics.provenance_issues}")
-        print(f"Grounded claim rate: {metrics.grounded_claim_rate:.1%}")
-        print(f"Verdict: {'PASS' if passed else 'FAIL'}")
-        print()
+        failure_summary = split_claim_failure_reasons(finals) if not passed else []
+        status = "PASS" if passed else "FAIL"
 
-        print("=== Comparison vs previous unbatched run ===")
-        print(
-            f"previous: claims={PREVIOUS_METRICS['claims']} "
-            f"supported={PREVIOUS_METRICS['supported']} "
-            f"contradicted={PREVIOUS_METRICS['contradicted']} "
-            f"not_in_evidence={PREVIOUS_METRICS['not_in_evidence']} "
-            f"derived={PREVIOUS_METRICS['derived']} "
-            f"provenance={PREVIOUS_METRICS['provenance']} "
-            f"grounded={PREVIOUS_METRICS['grounded']:.1%} "
-            f"verdict={PREVIOUS_METRICS['verdict']}"
-        )
-        print(
-            f"current:  claims={metrics.total_claims} "
-            f"supported={metrics.supported} "
-            f"contradicted={metrics.contradicted} "
-            f"not_in_evidence={metrics.not_in_evidence} "
-            f"derived={metrics.derived_from_unsupported_claim} "
-            f"provenance={metrics.provenance_issues} "
-            f"grounded={metrics.grounded_claim_rate:.1%} "
-            f"verdict={'PASS' if passed else 'FAIL'}"
-        )
-        print()
-
-        if not passed:
-            print("Failure reasons:")
-            for reason in split_claim_failure_reasons(finals):
-                print(f"  - {reason}")
+        if verbose:
+            print("=== Final metrics ===")
+            print(f"Total claims: {metrics.total_claims}")
+            print(f"Supported: {metrics.supported}")
+            print(f"Contradicted: {metrics.contradicted}")
+            print(f"Not in evidence: {metrics.not_in_evidence}")
+            print(f"Derived: {metrics.derived_from_unsupported_claim}")
+            print(f"Provenance issues: {metrics.provenance_issues}")
+            print(f"Grounded claim rate: {metrics.grounded_claim_rate:.1%}")
+            print(f"Verdict: {status}")
             print()
-
-        for label in FAKE_SEVERITY_LABELS:
-            fake_items = _claims_for_label(finals, label)
-            print(f"Claims involving {label}: {len(fake_items)}")
-            for fake_item in fake_items:
-                print(f"  claim_id: {fake_item.claim_id}")
-                print(f"  claim: {fake_item.claim}")
-                print(f"  status: {fake_item.status}")
-                print(f"  facts: {fake_item.reference_fact_ids}")
-                print(f"  provenance: {fake_item.provenance_issue}")
-                print(f"  depends_on: {fake_item.depends_on}")
-                print(f"  explanation: {fake_item.explanation}")
+            print(f"Dependency cycles detected: {len(bundle.graph.cycles)}")
+            print(f"normalized dependency edges: {len(bundle.graph.normalized_edges)}")
+            print(f"overall wall: {overall_wall:.2f}s")
+            print(f"Debug artifact path: {run_dir}")
             print()
+            if failure_summary:
+                print("Failure reasons:")
+                for reason in failure_summary[:20]:
+                    print(f"  - {reason}")
+                print()
+            for label in FAKE_SEVERITY_LABELS:
+                fake_items = _claims_for_label(finals, label)
+                print(f"Claims involving {label}: {len(fake_items)}")
 
-        derived_items = [
-            final for final in finals if final.status == "derived_from_unsupported_claim"
-        ]
-        print(f"derived_from_unsupported_claim findings: {len(derived_items)}")
-        for derived in derived_items:
-            print(f"  - {derived.claim_id}: {derived.claim}")
-            print(f"    depends_on: {derived.depends_on}")
-            print(f"    explanation: {derived.explanation}")
-        print()
-
-        print("=== Dependency graph ===")
-        print(f"raw dependency edges: {len(bundle.graph.raw_edges)}")
-        for edge in bundle.graph.raw_edges:
-            print(f"  raw {edge.source} -> {edge.target}")
-        print(f"Dependency cycles detected: {len(bundle.graph.cycles)}")
-        for cycle in bundle.graph.cycles:
-            print(f"  Cycle: {' <-> '.join(cycle)}")
-        if bundle.graph.removed_internal_edges:
-            print("Normalization removed internal edges:")
-            for edge in bundle.graph.removed_internal_edges:
-                print(f"  removed {edge.source} -> {edge.target}")
-        print(f"normalized dependency edges: {len(bundle.graph.normalized_edges)}")
-        for edge in bundle.graph.normalized_edges:
-            print(f"  normalized {edge.source} -> {edge.target}")
-        print(f"self-loop count: {bundle.graph.self_loop_count}")
-        print(f"statuses downgraded derived -> not_in_evidence: {bundle.downgraded_claims}")
-        print()
-
-        print("Judge execution errors:")
-        if not execution_errors:
-            print("  (none)")
-        else:
-            for err in execution_errors:
-                print(f"  - {err}")
-        print()
-
-        ollama_calls_before = 1 + PREVIOUS_BASE_CALLS + PREVIOUS_DEPENDENCY_CALLS
-        ollama_calls_after = 1 + len(base_batches) + len(dependency_batches)
-        speedup = PREVIOUS_OVERALL_SECONDS / overall_wall if overall_wall > 0 else 0.0
-
-        print("=== Runtime ===")
-        print(f"extracted claims: {len(extracted)}")
-        print(f"base batch count: {len(base_batches)}")
-        print(f"dependency eligible count: {len(eligible)}")
-        print(f"dependency batch count: {len(dependency_batches)}")
-        print(f"Ollama calls before vs after: {ollama_calls_before} -> {ollama_calls_after}")
-        print(f"extraction wall: {extraction_wall:.2f}s")
-        print(f"base total wall: {base_wall:.2f}s")
-        print(f"dependency total wall: {dependency_wall:.2f}s")
-        print(f"overall wall: {overall_wall:.2f}s")
-        print(f"average base batch wall: {avg_base_batch:.2f}s")
-        print(f"average claim-equivalent base time: {avg_claim_equiv:.2f}s")
-        print(f"average dependency batch wall: {avg_dep_batch:.2f}s")
-        print(f"previous overall: {PREVIOUS_OVERALL_SECONDS:.0f}s")
-        print(f"speedup vs 549s baseline: {speedup:.2f}x")
-        print()
-        print(f"Debug artifact path: {run_dir}")
-        print()
-
+        return LongFormClaimAuditResult(
+            case_id=CASE_ID,
+            status=status,
+            total_claims=metrics.total_claims,
+            supported_count=metrics.supported,
+            contradicted_count=metrics.contradicted,
+            not_in_evidence_count=metrics.not_in_evidence,
+            derived_count=metrics.derived_from_unsupported_claim,
+            provenance_issue_count=metrics.provenance_issues,
+            grounded_claim_rate=metrics.grounded_claim_rate,
+            raw_dependency_edge_count=len(bundle.graph.raw_edges),
+            normalized_dependency_edge_count=len(bundle.graph.normalized_edges),
+            dependency_cycle_count=len(bundle.graph.cycles),
+            execution_error=None,
+            duration_seconds=overall_wall,
+            debug_path=str(run_dir),
+            judge_model=SUT_GENERATION_MODEL,
+            judge_model_digest=SUT_GENERATION_MODEL_DIGEST,
+            num_ctx=CLAIM_LEVEL_NUM_CTX,
+            candidate_sha256=candidate_sha256,
+            prompt_sha256=prompt_sha,
+            failure_summary=failure_summary,
+        )
     finally:
         client.unload_model(SUT_GENERATION_MODEL)
-        print("final ollama ps:")
-        print(_ollama_ps_output())
+        if verbose:
+            print("final ollama ps:")
+            print(_ollama_ps_output())
+
+
+def main() -> int:
+    result = run_split_claim_evaluation(verbose=True)
+    if result.status == "ERROR":
+        return 1
+    if result.status == "FAIL":
+        return 1
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

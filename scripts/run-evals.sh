@@ -21,6 +21,7 @@ info "Verifying environment"
 "${ROOT}/scripts/verify-env.sh"
 
 info "Running evaluations with ${VENV_PYTHON}"
+# Forward CLI flags (e.g. --include-long-form) to Python; unknown flags fail there.
 # Preserve run_evaluations exit code (including known behavioral FAILs).
 set +e
 "$VENV_PYTHON" -m run_evaluations "$@"

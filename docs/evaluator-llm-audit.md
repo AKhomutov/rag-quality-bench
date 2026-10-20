@@ -88,9 +88,17 @@ These modules are experiments and must not be treated as the current evaluator a
 - `run_long_form_judge_diagnostic`
 - `run_long_form_judge_qwen_16k`
 
-Current long-form prototype: `run_split_claim_pipeline`.
+Current long-form split pipeline: `run_split_claim_pipeline` (reusable
+`run_split_claim_evaluation`). It is an **opt-in production evaluation suite**
+(`long_form_claim_audit`) via `run_evaluations --include-long-form` /
+`./scripts/run-evals.sh --include-long-form`. The standalone module remains
+available for focused debugging. Historical monolithic / Gemma / diagnostic /
+Qwen-16k-control / offline-graph runners stay experiments only.
 
-Normal `run_evaluations` flow: baseline + agent (deterministic scorers); adversarial/conflicting listed as semantic-only and scored via `run_judge_prototype` / `run_judge_stability`.
+Normal `run_evaluations` default flow: baseline + agent (deterministic scorers);
+adversarial/conflicting listed as semantic-only and scored via
+`run_judge_prototype` / `run_judge_stability`. Long-form is not run unless
+`--include-long-form` is set.
 
 ## Future candidate (not implemented)
 

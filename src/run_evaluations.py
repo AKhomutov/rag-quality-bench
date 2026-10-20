@@ -1,5 +1,17 @@
+"""Main evaluation runner.
+
+Default flow stays fast (baseline + agent). Opt in to the slower long-form
+claim audit with ``--include-long-form``.
+"""
+
+from __future__ import annotations
+
+import argparse
 import json
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 from adversarial_cases import load_adversarial_cases
 from agent_cases import load_agent_tool_selection_cases
@@ -8,6 +20,12 @@ from conflicting_cases import load_conflicting_evidence_cases
 from evaluation_results import EvaluationResult, TrialSummary
 from evaluators.agent_tool_selection_evaluator import evaluate_agent_tool_selection_case
 from evaluators.baseline_evaluator import evaluate_rag_case
+from long_form_claim_audit_results import (
+    LONG_FORM_SUITE,
+    LongFormClaimAuditResult,
+    evaluation_status,
+    long_form_result_to_evaluation_result,
+)
 from rag_cases import load_rag_cases
 from workspace_setup import (
     STANDARD_DOCUMENTS,
@@ -25,6 +43,26 @@ REPORTS_DIR = ROOT / "reports"
 JSON_REPORT_PATH = REPORTS_DIR / "evaluation_report.json"
 MARKDOWN_REPORT_PATH = REPORTS_DIR / "evaluation_report.md"
 
+SplitClaimRunner = Callable[[], LongFormClaimAuditResult]
+
+
+@dataclass(frozen=True)
+class EvaluationCliOptions:
+    include_long_form: bool
+
+
+def parse_evaluation_args(argv: Sequence[str] | None = None) -> EvaluationCliOptions:
+    parser = argparse.ArgumentParser(description="Run RAG quality evaluations.")
+    parser.add_argument(
+        "--include-long-form",
+        action="store_true",
+        default=False,
+        help=("Also run the slower long-form mixed-truth claim audit (split semantic pipeline)."),
+    )
+    args = parser.parse_args(argv)
+    include_flag = cast(object, args.include_long_form)
+    return EvaluationCliOptions(include_long_form=include_flag is True)
+
 
 def count_passed(results: list[EvaluationResult]) -> int:
     passed_count = 0
@@ -32,6 +70,11 @@ def count_passed(results: list[EvaluationResult]) -> int:
         if result.passed:
             passed_count += 1
     return passed_count
+
+
+def count_failed(results: list[EvaluationResult]) -> int:
+    """Count semantic FAIL and execution ERROR (anything that did not pass)."""
+    return len(results) - count_passed(results)
 
 
 def count_suite_stats(results: list[EvaluationResult], suite: str) -> dict[str, int]:
@@ -124,12 +167,33 @@ def trial_summary_to_json_object(summary: TrialSummary | None) -> dict[str, obje
     }
 
 
-def result_to_json_object(result: EvaluationResult) -> dict[str, object]:
+def _long_form_metrics_payload(metrics: dict[str, object]) -> dict[str, object]:
     return {
+        "total_claims": metrics["total_claims"],
+        "supported": metrics["supported"],
+        "contradicted": metrics["contradicted"],
+        "not_in_evidence": metrics["not_in_evidence"],
+        "derived": metrics["derived"],
+        "provenance_issues": metrics["provenance_issues"],
+        "grounded_claim_rate": metrics["grounded_claim_rate"],
+    }
+
+
+def _long_form_dependency_payload(metrics: dict[str, object]) -> dict[str, object]:
+    return {
+        "raw_edges": metrics["raw_dependency_edges"],
+        "normalized_edges": metrics["normalized_dependency_edges"],
+        "cycles": metrics["dependency_cycles"],
+    }
+
+
+def result_to_json_object(result: EvaluationResult) -> dict[str, object]:
+    payload: dict[str, object] = {
         "suite": result.suite,
         "case_id": result.case_id,
         "category": result.category,
         "passed": result.passed,
+        "status": evaluation_status(result),
         "expected_behavior": result.expected_behavior,
         "failure_description": result.failure_description,
         "failures": result.failures,
@@ -137,11 +201,27 @@ def result_to_json_object(result: EvaluationResult) -> dict[str, object]:
         "tools_used": result.tools_used,
         "trial_summary": trial_summary_to_json_object(result.trial_summary),
     }
+    if result.execution_error is not None:
+        payload["execution_error"] = result.execution_error
+    if result.long_form_metrics is not None:
+        metrics = result.long_form_metrics
+        payload["metrics"] = _long_form_metrics_payload(metrics)
+        payload["dependency_graph"] = _long_form_dependency_payload(metrics)
+        payload["reproducibility"] = {
+            "judge_model": metrics["judge_model"],
+            "judge_model_digest": metrics["judge_model_digest"],
+            "num_ctx": metrics["num_ctx"],
+            "candidate_sha256": metrics["candidate_sha256"],
+            "prompt_sha256": metrics["prompt_sha256"],
+        }
+        if result.debug_path is not None:
+            payload["debug_path"] = result.debug_path
+    return payload
 
 
 def build_json_payload(results: list[EvaluationResult]) -> dict[str, object]:
     passed_count = count_passed(results)
-    failed_count = len(results) - passed_count
+    failed_count = count_failed(results)
 
     results_data: list[dict[str, object]] = []
     for result in results:
@@ -170,11 +250,51 @@ def format_blockquote(text: str) -> str:
     return "\n".join(quoted_lines)
 
 
-def append_result_section(sections: list[str], result: EvaluationResult) -> None:
-    if result.passed:
-        status = "PASS"
+def append_long_form_section(sections: list[str], result: EvaluationResult) -> None:
+    status = evaluation_status(result)
+    metrics = result.long_form_metrics or {}
+    sections.append("## Long-form claim audit")
+    sections.append("")
+    sections.append(f"Case: {result.case_id}")
+    sections.append(f"Status: {status}")
+    sections.append("")
+    sections.append(f"Claims: {metrics.get('total_claims', 0)}")
+    sections.append(f"Supported: {metrics.get('supported', 0)}")
+    sections.append(f"Contradicted: {metrics.get('contradicted', 0)}")
+    sections.append(f"Not in evidence: {metrics.get('not_in_evidence', 0)}")
+    sections.append(f"Derived from unsupported: {metrics.get('derived', 0)}")
+    sections.append(f"Provenance issues: {metrics.get('provenance_issues', 0)}")
+    grounded = metrics.get("grounded_claim_rate", 0.0)
+    if isinstance(grounded, int | float):
+        sections.append(f"Grounded claim rate: {float(grounded):.1%}")
     else:
-        status = "FAIL"
+        sections.append(f"Grounded claim rate: {grounded}")
+    sections.append("")
+    cycles = metrics.get("dependency_cycles", 0)
+    sections.append(f"Dependency cycles normalized: {cycles}")
+    duration = metrics.get("duration_seconds", 0.0)
+    if isinstance(duration, int | float):
+        sections.append(f"Duration: {float(duration):.2f}s")
+    else:
+        sections.append(f"Duration: {duration}")
+    sections.append("")
+    if result.failures and status != "PASS":
+        sections.append("Representative failures:")
+        for failure in result.failures[:5]:
+            sections.append(f"- {failure}")
+        sections.append("")
+    if result.debug_path is not None:
+        sections.append("Detailed trace:")
+        sections.append(result.debug_path)
+        sections.append("")
+
+
+def append_result_section(sections: list[str], result: EvaluationResult) -> None:
+    if result.suite == LONG_FORM_SUITE and result.long_form_metrics is not None:
+        # Dedicated section is rendered once for the suite; skip per-case dump.
+        return
+
+    status = evaluation_status(result)
 
     sections.append(f"### {status} — {result.case_id}")
     sections.append("")
@@ -229,7 +349,7 @@ def filter_results_by_suite(
 
 def build_markdown_report(results: list[EvaluationResult]) -> str:
     overall_passed = count_passed(results)
-    overall_failed = len(results) - overall_passed
+    overall_failed = count_failed(results)
     suites = collect_suites(results)
 
     sections: list[str] = [
@@ -266,12 +386,19 @@ def build_markdown_report(results: list[EvaluationResult]) -> str:
         )
 
     for suite in suites:
+        if suite == LONG_FORM_SUITE:
+            continue
         sections.append("")
         sections.append(f"## {format_suite_label(suite)} Results")
         sections.append("")
         suite_results = filter_results_by_suite(results, suite)
         for result in suite_results:
             append_result_section(sections, result)
+
+    long_form_results = filter_results_by_suite(results, LONG_FORM_SUITE)
+    for result in long_form_results:
+        sections.append("")
+        append_long_form_section(sections, result)
 
     return "\n".join(sections)
 
@@ -289,10 +416,7 @@ def write_markdown_report(path: Path, results: list[EvaluationResult]) -> None:
 
 
 def print_status(result: EvaluationResult) -> None:
-    if result.passed:
-        status = "PASS"
-    else:
-        status = "FAIL"
+    status = evaluation_status(result)
     print(f"  {status}")
 
     if result.trial_summary is None:
@@ -310,7 +434,37 @@ def print_status(result: EvaluationResult) -> None:
         print(f"    {tool_name}: {count}/{summary.total}")
 
 
-def main() -> int:
+def maybe_run_long_form_suite(
+    results: list[EvaluationResult],
+    *,
+    include_long_form: bool,
+    runner: SplitClaimRunner,
+) -> None:
+    """Opt-in long-form suite. Does nothing when ``include_long_form`` is false."""
+    if not include_long_form:
+        return
+    print()
+    print("Long-form claim audit")
+    print("---------------------")
+    print(f"Evaluating {LONG_FORM_SUITE}...")
+    audit = runner()
+    result = long_form_result_to_evaluation_result(audit)
+    print_status(result)
+    if result.debug_path is not None:
+        print(f"  debug: {result.debug_path}")
+    results.append(result)
+
+
+def default_split_claim_runner() -> LongFormClaimAuditResult:
+    from run_split_claim_pipeline import run_split_claim_evaluation
+
+    return run_split_claim_evaluation(verbose=True)
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    options = parse_evaluation_args(argv)
+    include_long_form = options.include_long_form
+
     client = AnythingLLMClient()
     workspace: PreparedWorkspace | None = None
     exit_code = 1
@@ -371,12 +525,20 @@ def main() -> int:
             print_status(result)
             results.append(result)
 
+        # Long-form runs after deterministic suites so Qwen keep_alive/unload
+        # does not affect AnythingLLM-backed evaluations.
+        maybe_run_long_form_suite(
+            results,
+            include_long_form=include_long_form,
+            runner=default_split_claim_runner,
+        )
+
         REPORTS_DIR.mkdir(parents=True, exist_ok=True)
         write_json_report(JSON_REPORT_PATH, results)
         write_markdown_report(MARKDOWN_REPORT_PATH, results)
 
         passed_count = count_passed(results)
-        failed_count = len(results) - passed_count
+        failed_count = count_failed(results)
 
         print()
         suites = collect_suites(results)
