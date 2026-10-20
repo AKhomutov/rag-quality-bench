@@ -7,6 +7,7 @@ from claim_level_config import (
     CLAIM_LEVEL_JUDGE_MODEL,
     CLAIM_LEVEL_JUDGE_MODEL_DIGEST,
     CLAIM_LEVEL_NUM_CTX,
+    SPLIT_CLAIM_PIPELINE_KEEP_ALIVE,
 )
 from clients.ollama_client import JUDGE_MODEL, build_generate_request_body
 from workspace_setup import PROJECT_ROOT
@@ -82,6 +83,21 @@ def test_keep_alive_serialized_only_when_set() -> None:
     )
     assert with_keep["keep_alive"] == 0
     assert with_keep["model"] == "gemma3:12b"
+
+
+def test_split_pipeline_keep_alive_stays_loaded() -> None:
+    assert SPLIT_CLAIM_PIPELINE_KEEP_ALIVE == -1
+    body = build_generate_request_body(
+        model=JUDGE_MODEL,
+        prompt="x",
+        keep_alive=SPLIT_CLAIM_PIPELINE_KEEP_ALIVE,
+        num_ctx=CLAIM_LEVEL_NUM_CTX,
+    )
+    assert body["keep_alive"] == -1
+    options_raw = body["options"]
+    assert isinstance(options_raw, dict)
+    options = cast(dict[str, object], options_raw)
+    assert options["num_ctx"] == 16384
 
 
 def test_debug_trace_includes_model_digest_and_keep_alive() -> None:

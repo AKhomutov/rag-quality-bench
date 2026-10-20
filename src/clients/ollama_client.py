@@ -189,3 +189,18 @@ class OllamaClient:
         response.raise_for_status()
         raw_json: object = response.json()
         return payload_dict_from_response_json(raw_json)
+
+    def unload_model(self, model: str, *, timeout: int = 60) -> None:
+        """Unload a model from VRAM via generate with keep_alive=0."""
+        body: dict[str, object] = {
+            "model": model,
+            "prompt": "",
+            "stream": False,
+            "keep_alive": 0,
+        }
+        response = requests.post(
+            f"{self.base_url}/api/generate",
+            json=body,
+            timeout=timeout,
+        )
+        response.raise_for_status()

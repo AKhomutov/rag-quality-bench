@@ -14,7 +14,13 @@ CLAIM_LEVEL_JUDGE_TEMPERATURE = 0
 # Runtime capacity for full claim-level prompt + long structured audit output.
 CLAIM_LEVEL_NUM_CTX = 16384
 
-# SUT / generation model (also used for Qwen claim-level A/B controls).
+# Split claim pipeline keeps the model loaded across many sequential calls,
+# then unloads once at the end via OllamaClient.unload_model.
+# Ollama accepts integer -1 (indefinite); string "-1" is rejected.
+SPLIT_CLAIM_PIPELINE_KEEP_ALIVE: int = -1
+SPLIT_CLAIM_PIPELINE_TEMPERATURE = 0
+
+# SUT / generation model (also used for Qwen claim-level A/B controls / split pipeline).
 SUT_GENERATION_MODEL = "qwen3:8b"
 SUT_GENERATION_MODEL_DIGEST = (
     "sha256:500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41"
