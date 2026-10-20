@@ -8,6 +8,12 @@ from dataclasses import dataclass
 from typing import cast
 
 from long_form_severity_facts import KNOWN_REFERENCE_FACT_IDS
+from split_claim_dependency_graph import (
+    DependencyGraphNormalization,
+    edges_from_dependency_map,
+    normalize_dependency_graph,
+    validate_raw_dependency_edges,
+)
 
 CLAIM_ID_PATTERN = re.compile(r"^C\d+$")
 
@@ -70,7 +76,16 @@ class FinalClaimJudgement:
     reference_fact_ids: list[str]
     provenance_issue: bool
     depends_on: list[str]
+    raw_depends_on: list[str]
+    dependency_cycle: bool
     explanation: str
+
+
+@dataclass(frozen=True)
+class FinalJudgementBundle:
+    finals: list[FinalClaimJudgement]
+    graph: DependencyGraphNormalization
+    downgraded_claims: list[str]
 
 
 @dataclass(frozen=True)
@@ -252,14 +267,17 @@ def _parse_dependency_payload(
         msg = f"{context}: depends_on must be non-empty when derived=true"
         raise ValueError(msg)
 
+    if len(depends_on) != len(set(depends_on)):
+        duplicates = sorted({dep_id for dep_id in depends_on if depends_on.count(dep_id) > 1})
+        msg = f"{context}: depends_on contains duplicate IDs: {duplicates}"
+        raise ValueError(msg)
+
     for dep_id in depends_on:
         _validate_claim_id(dep_id, context)
         if dep_id not in known_claim_ids:
             msg = f"{context}: depends_on contains unknown claim_id {dep_id!r}"
             raise ValueError(msg)
-        if dep_id == claim_id:
-            msg = f"{context}: depends_on must not include the current claim_id"
-            raise ValueError(msg)
+        # Self-loops are allowed; graph normalization handles them.
 
     return DependencyJudgement(
         claim_id=claim_id,
@@ -409,10 +427,31 @@ def build_final_judgements(
     extracted: list[ExtractedClaim],
     base_by_id: dict[str, BaseClaimJudgement],
     dependency_by_id: dict[str, DependencyJudgement],
-) -> list[FinalClaimJudgement]:
+) -> FinalJudgementBundle:
+    known_ids = frozenset(item.claim_id for item in extracted)
+    premise_ids = frozenset(
+        judgement.claim_id
+        for judgement in base_by_id.values()
+        if judgement.status in {"contradicted", "not_in_evidence"}
+    )
+
+    raw_depends_map: dict[str, list[str]] = {}
+    for claim_id, dependency in dependency_by_id.items():
+        raw_depends_map[claim_id] = list(dependency.depends_on)
+
+    raw_edges = edges_from_dependency_map(raw_depends_map)
+    validate_raw_dependency_edges(
+        raw_edges,
+        known_claim_ids=known_ids,
+        allowed_premise_ids=premise_ids,
+    )
+    graph = normalize_dependency_graph(raw_edges)
+
     finals: list[FinalClaimJudgement] = []
+    downgraded: list[str] = []
     for item in extracted:
         base = base_by_id[item.claim_id]
+        in_cycle = graph.cycle_membership.get(item.claim_id, False)
         if base.status in {"supported", "contradicted"}:
             finals.append(
                 FinalClaimJudgement(
@@ -423,6 +462,8 @@ def build_final_judgements(
                     reference_fact_ids=list(base.reference_fact_ids),
                     provenance_issue=base.provenance_issue,
                     depends_on=[],
+                    raw_depends_on=[],
+                    dependency_cycle=False,
                     explanation=base.explanation,
                 )
             )
@@ -430,25 +471,45 @@ def build_final_judgements(
 
         # base.status == not_in_evidence
         dep = dependency_by_id.get(item.claim_id)
+        raw_depends = list(dep.depends_on) if dep is not None else []
+        normalized_depends = list(graph.normalized_depends_on.get(item.claim_id, []))
+
         if dep is not None and dep.derived:
-            finals.append(
-                FinalClaimJudgement(
-                    claim_id=item.claim_id,
-                    claim=item.claim,
-                    candidate_excerpt=item.candidate_excerpt,
-                    status="derived_from_unsupported_claim",
-                    reference_fact_ids=list(base.reference_fact_ids),
-                    provenance_issue=base.provenance_issue,
-                    depends_on=list(dep.depends_on),
-                    explanation=dep.explanation,
+            if normalized_depends:
+                finals.append(
+                    FinalClaimJudgement(
+                        claim_id=item.claim_id,
+                        claim=item.claim,
+                        candidate_excerpt=item.candidate_excerpt,
+                        status="derived_from_unsupported_claim",
+                        reference_fact_ids=list(base.reference_fact_ids),
+                        provenance_issue=base.provenance_issue,
+                        depends_on=normalized_depends,
+                        raw_depends_on=raw_depends,
+                        dependency_cycle=in_cycle,
+                        explanation=dep.explanation,
+                    )
                 )
-            )
+            else:
+                downgraded.append(item.claim_id)
+                finals.append(
+                    FinalClaimJudgement(
+                        claim_id=item.claim_id,
+                        claim=item.claim,
+                        candidate_excerpt=item.candidate_excerpt,
+                        status="not_in_evidence",
+                        reference_fact_ids=list(base.reference_fact_ids),
+                        provenance_issue=base.provenance_issue,
+                        depends_on=[],
+                        raw_depends_on=raw_depends,
+                        dependency_cycle=in_cycle,
+                        explanation=dep.explanation,
+                    )
+                )
         else:
             explanation = base.explanation
-            depends_on: list[str] = []
             if dep is not None:
                 explanation = dep.explanation
-                depends_on = list(dep.depends_on)
             finals.append(
                 FinalClaimJudgement(
                     claim_id=item.claim_id,
@@ -457,11 +518,17 @@ def build_final_judgements(
                     status="not_in_evidence",
                     reference_fact_ids=list(base.reference_fact_ids),
                     provenance_issue=base.provenance_issue,
-                    depends_on=depends_on,
+                    depends_on=normalized_depends,
+                    raw_depends_on=raw_depends,
+                    dependency_cycle=in_cycle,
                     explanation=explanation,
                 )
             )
-    return finals
+    return FinalJudgementBundle(
+        finals=finals,
+        graph=graph,
+        downgraded_claims=downgraded,
+    )
 
 
 def split_claim_passed(finals: list[FinalClaimJudgement]) -> bool:

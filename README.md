@@ -377,6 +377,9 @@ Code owns schema validation, exact IDs, fact-ID validation, tool traces, aggrega
 
 The LLM extracts semantic claims, decides whether evidence supports a natural-language claim, and identifies semantic dependency when a deterministic rule is insufficient.
 
+Dependency output is treated as a directed graph.
+Cycles are normalized deterministically rather than resolved by another LLM call.
+
 The full call-site inventory and keep/replace decisions live in
 [`docs/evaluator-llm-audit.md`](docs/evaluator-llm-audit.md).
 

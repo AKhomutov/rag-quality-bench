@@ -17,6 +17,8 @@ def _final(
     status: str = "supported",
     provenance_issue: bool = False,
     depends_on: list[str] | None = None,
+    raw_depends_on: list[str] | None = None,
+    dependency_cycle: bool = False,
 ) -> FinalClaimJudgement:
     return FinalClaimJudgement(
         claim_id=claim_id,
@@ -26,6 +28,8 @@ def _final(
         reference_fact_ids=["F1"],
         provenance_issue=provenance_issue,
         depends_on=[] if depends_on is None else depends_on,
+        raw_depends_on=[] if raw_depends_on is None else raw_depends_on,
+        dependency_cycle=dependency_cycle,
         explanation="ok",
     )
 
@@ -91,13 +95,14 @@ def test_build_final_applies_dependency_only_to_not_in_evidence() -> None:
             "derived from unsupported Severity 0",
         ),
     }
-    finals = build_final_judgements(extracted, base, deps)
-    by_id = {item.claim_id: item for item in finals}
+    bundle = build_final_judgements(extracted, base, deps)
+    by_id = {item.claim_id: item for item in bundle.finals}
     assert by_id["C1"].status == "contradicted"
     assert by_id["C1"].depends_on == []
     assert by_id["C2"].status == "supported"
     assert by_id["C3"].status == "derived_from_unsupported_claim"
     assert by_id["C3"].depends_on == ["C1"]
+    assert by_id["C3"].raw_depends_on == ["C1"]
 
 
 def test_build_final_keeps_not_in_evidence_when_not_derived() -> None:
@@ -108,6 +113,26 @@ def test_build_final_keeps_not_in_evidence_when_not_derived() -> None:
     deps = {
         "C1": DependencyJudgement("C1", False, [], "independent unsupported claim"),
     }
-    finals = build_final_judgements(extracted, base, deps)
-    assert finals[0].status == "not_in_evidence"
-    assert finals[0].depends_on == []
+    bundle = build_final_judgements(extracted, base, deps)
+    assert bundle.finals[0].status == "not_in_evidence"
+    assert bundle.finals[0].depends_on == []
+    assert bundle.graph.cycles == []
+
+
+def test_cycle_normalization_does_not_create_pass() -> None:
+    extracted = [
+        ExtractedClaim("C1", "a", "a"),
+        ExtractedClaim("C2", "b", "b"),
+    ]
+    base = {
+        "C1": BaseClaimJudgement("C1", "not_in_evidence", [], True, "u1"),
+        "C2": BaseClaimJudgement("C2", "not_in_evidence", [], True, "u2"),
+    }
+    deps = {
+        "C1": DependencyJudgement("C1", True, ["C2"], "cycle"),
+        "C2": DependencyJudgement("C2", True, ["C1"], "cycle"),
+    }
+    bundle = build_final_judgements(extracted, base, deps)
+    assert split_claim_passed(bundle.finals) is False
+    assert all(item.status == "not_in_evidence" for item in bundle.finals)
+    assert sorted(bundle.downgraded_claims) == ["C1", "C2"]

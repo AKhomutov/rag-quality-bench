@@ -67,10 +67,19 @@ def test_unknown_dependency_id_rejected() -> None:
         )
 
 
-def test_self_dependency_rejected() -> None:
-    with pytest.raises(ValueError, match="must not include the current"):
+def test_self_dependency_allowed_for_graph_normalization() -> None:
+    result = parse_dependency_judgement(
+        _payload(depends_on=["C12"]),
+        expected_claim_id="C12",
+        known_claim_ids=KNOWN,
+    )
+    assert result.depends_on == ["C12"]
+
+
+def test_duplicate_depends_on_rejected() -> None:
+    with pytest.raises(ValueError, match="duplicate"):
         parse_dependency_judgement(
-            _payload(depends_on=["C12"]),
+            _payload(depends_on=["C3", "C3"]),
             expected_claim_id="C12",
             known_claim_ids=KNOWN,
         )

@@ -44,6 +44,7 @@ from split_claim_debug import (
     create_split_claim_debug_run_dir,
     write_base_batch_artifact,
     write_dependency_batch_artifact,
+    write_dependency_graph_artifact,
     write_extraction_artifact,
     write_summary_artifact,
 )
@@ -385,7 +386,8 @@ def main() -> None:
         dependency_wall = time.perf_counter() - dependency_started
         print()
 
-        finals = build_final_judgements(extracted, base_by_id, dependency_by_id)
+        bundle = build_final_judgements(extracted, base_by_id, dependency_by_id)
+        finals = bundle.finals
         metrics = compute_split_claim_metrics(finals)
         passed = split_claim_passed(finals)
         overall_wall = time.perf_counter() - overall_started
@@ -399,6 +401,11 @@ def main() -> None:
             else 0.0
         )
 
+        write_dependency_graph_artifact(
+            run_dir,
+            graph=bundle.graph,
+            downgraded_claims=bundle.downgraded_claims,
+        )
         write_summary_artifact(
             run_dir,
             candidate_sha256=candidate_sha256,
@@ -417,6 +424,8 @@ def main() -> None:
             average_claim_equivalent_base_time=avg_claim_equiv,
             average_dependency_batch_duration=avg_dep_batch,
             execution_errors=execution_errors,
+            dependency_cycle_count=len(bundle.graph.cycles),
+            downgraded_claims=bundle.downgraded_claims,
         )
 
         print("=== Final metrics ===")
@@ -482,13 +491,22 @@ def main() -> None:
             print(f"    explanation: {derived.explanation}")
         print()
 
-        print("Dependency edges:")
-        edges = [(final.claim_id, dep) for final in finals for dep in final.depends_on]
-        if not edges:
-            print("  (none)")
-        else:
-            for src, dst in edges:
-                print(f"  {src} -> {dst}")
+        print("=== Dependency graph ===")
+        print(f"raw dependency edges: {len(bundle.graph.raw_edges)}")
+        for edge in bundle.graph.raw_edges:
+            print(f"  raw {edge.source} -> {edge.target}")
+        print(f"Dependency cycles detected: {len(bundle.graph.cycles)}")
+        for cycle in bundle.graph.cycles:
+            print(f"  Cycle: {' <-> '.join(cycle)}")
+        if bundle.graph.removed_internal_edges:
+            print("Normalization removed internal edges:")
+            for edge in bundle.graph.removed_internal_edges:
+                print(f"  removed {edge.source} -> {edge.target}")
+        print(f"normalized dependency edges: {len(bundle.graph.normalized_edges)}")
+        for edge in bundle.graph.normalized_edges:
+            print(f"  normalized {edge.source} -> {edge.target}")
+        print(f"self-loop count: {bundle.graph.self_loop_count}")
+        print(f"statuses downgraded derived -> not_in_evidence: {bundle.downgraded_claims}")
         print()
 
         print("Judge execution errors:")

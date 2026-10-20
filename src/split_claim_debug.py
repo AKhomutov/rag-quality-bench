@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import cast
 
 from clients.ollama_client import OllamaGenerationResult
+from split_claim_dependency_graph import DependencyGraphNormalization
 from split_claim_results import (
     BaseClaimJudgement,
     DependencyJudgement,
@@ -146,6 +147,28 @@ def write_dependency_batch_artifact(
     _write_json(run_dir / "dependency_batches" / f"batch_{batch_index:03d}.json", payload)
 
 
+def write_dependency_graph_artifact(
+    run_dir: Path,
+    *,
+    graph: DependencyGraphNormalization,
+    downgraded_claims: list[str],
+) -> None:
+    payload: dict[str, object] = {
+        "raw_edges": [{"from": edge.source, "to": edge.target} for edge in graph.raw_edges],
+        "cycles": [list(group) for group in graph.cycles],
+        "normalized_edges": [
+            {"from": edge.source, "to": edge.target} for edge in graph.normalized_edges
+        ],
+        "removed_internal_edges": [
+            {"from": edge.source, "to": edge.target} for edge in graph.removed_internal_edges
+        ],
+        "self_loop_count": graph.self_loop_count,
+        "claims_in_cycles": sorted(graph.claims_in_cycles),
+        "downgraded_claims": list(downgraded_claims),
+    }
+    _write_json(run_dir / "dependency_graph.json", payload)
+
+
 def write_summary_artifact(
     run_dir: Path,
     *,
@@ -165,6 +188,8 @@ def write_summary_artifact(
     average_claim_equivalent_base_time: float,
     average_dependency_batch_duration: float,
     execution_errors: list[str],
+    dependency_cycle_count: int = 0,
+    downgraded_claims: list[str] | None = None,
 ) -> None:
     payload: dict[str, object] = {
         "candidate_sha256": candidate_sha256,
@@ -182,6 +207,8 @@ def write_summary_artifact(
         "average_base_batch_duration_seconds": average_base_batch_duration,
         "average_claim_equivalent_base_time_seconds": average_claim_equivalent_base_time,
         "average_dependency_batch_duration_seconds": average_dependency_batch_duration,
+        "dependency_cycle_count": dependency_cycle_count,
+        "downgraded_claims": [] if downgraded_claims is None else list(downgraded_claims),
         "execution_errors": execution_errors,
     }
     _write_json(run_dir / "summary.json", payload)
