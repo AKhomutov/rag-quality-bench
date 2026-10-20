@@ -17,8 +17,7 @@ from claim_level_config import (
     CLAIM_LEVEL_JUDGE_MODEL_DIGEST,
     CLAIM_LEVEL_JUDGE_TEMPERATURE,
     CLAIM_LEVEL_NUM_CTX,
-    EXPECTED_FIXED_CANDIDATE_LENGTH,
-    EXPECTED_FIXED_CANDIDATE_SHA256,
+    FIXED_CANDIDATE_RELATIVE_PATH,
 )
 from claim_level_debug import parse_and_trace_claim_level_judge_response
 from claim_level_diagnostics import classify_parse_error
@@ -29,7 +28,7 @@ from claim_level_results import (
     claim_level_passed,
 )
 from clients.ollama_client import OllamaClient
-from fixed_candidate_loader import load_identical_candidate_answer, sha256_text
+from fixed_candidate_loader import load_fixed_candidate, sha256_text
 from judge_debug import case_trace_path, create_judge_debug_run_dir
 from judges.claim_level_judge import build_claim_level_judge_prompt
 from judges.claim_level_schema import (
@@ -47,9 +46,6 @@ from long_form_severity_prompt import (
 from workspace_setup import PROJECT_ROOT
 
 REPORTS_ROOT = PROJECT_ROOT / "reports"
-PREVIOUS_TRACE_PATH = (
-    REPORTS_ROOT / "judge_debug" / "20261019T235938" / "mixed_truth_severity_policy_poisoning.jsonl"
-)
 JUDGE_TRIALS = 10
 JUDGE_GENERATE_TIMEOUT_SECONDS = 900
 
@@ -125,21 +121,6 @@ def find_internal_inconsistencies(result: ClaimLevelJudgeResult) -> list[str]:
                     f"supported + {overlapping} while discussing {label}: {claim.claim}"
                 )
     return findings
-
-
-def assert_fixed_candidate_identity(candidate_answer: str, candidate_sha256: str) -> None:
-    if candidate_sha256 != EXPECTED_FIXED_CANDIDATE_SHA256:
-        msg = (
-            "candidate SHA-256 mismatch: "
-            f"expected {EXPECTED_FIXED_CANDIDATE_SHA256}, got {candidate_sha256}"
-        )
-        raise ValueError(msg)
-    if len(candidate_answer) != EXPECTED_FIXED_CANDIDATE_LENGTH:
-        msg = (
-            "candidate length mismatch: "
-            f"expected {EXPECTED_FIXED_CANDIDATE_LENGTH}, got {len(candidate_answer)}"
-        )
-        raise ValueError(msg)
 
 
 def run_judge_trial(
@@ -388,13 +369,12 @@ def main() -> int:
     sut_prompt = load_sut_prompt()
     authoritative_source = AUTHORITATIVE_DOCUMENT_PATH.read_text(encoding="utf-8")
     reference_facts = reference_facts_as_lines()
-    candidate_answer = load_identical_candidate_answer(PREVIOUS_TRACE_PATH)
+    candidate_answer = load_fixed_candidate()
     candidate_sha256 = sha256_text(candidate_answer)
-    assert_fixed_candidate_identity(candidate_answer, candidate_sha256)
     debug_run_dir = create_judge_debug_run_dir(REPORTS_ROOT)
 
     print("Candidate source:")
-    print(PREVIOUS_TRACE_PATH.relative_to(PROJECT_ROOT))
+    print(FIXED_CANDIDATE_RELATIVE_PATH)
     print()
     print("Candidate SHA-256:")
     print(candidate_sha256)
@@ -402,7 +382,7 @@ def main() -> int:
     print("Candidate length:")
     print(len(candidate_answer))
     print()
-    print("SUT was NOT called. Reusing fixed candidate answer from previous trace.")
+    print("SUT was NOT called. Reusing tracked fixed candidate fixture.")
     print()
     print("Semantic prompt / F1-F16 / JSON Schema / Python verdict: unchanged.")
     print(f"Judge model change only: qwen3:8b -> {CLAIM_LEVEL_JUDGE_MODEL}")

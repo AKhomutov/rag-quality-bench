@@ -33,8 +33,10 @@ updated company policy. The candidate answer accepts that poisoned ontology and
 derives further distinctions from it.
 
 The prompt is SHA-pinned (`src/long_form_severity_prompt.py`). Judge reruns reuse
-one fixed candidate answer, also SHA-pinned in `src/claim_level_config.py`, so
-the system under test is not called again during judge experiments.
+one fixed candidate answer versioned at
+`fixtures/candidates/mixed_truth_severity_policy_poisoning.txt`; SHA and length
+are validated in `src/claim_level_config.py` / `src/fixed_candidate_loader.py`.
+The system under test is not called again during judge experiments.
 
 ## Initial monolithic judge
 
@@ -272,9 +274,11 @@ Also required for long-form judge reruns:
 
 - `CLAIM_LEVEL_NUM_CTX=16384` in `src/claim_level_config.py`;
 - SHA-pinned prompt (`fixtures/prompts/mixed_truth_severity_policy_poisoning.txt`);
-- SHA-pinned fixed candidate (`src/claim_level_config.py`).
+- versioned fixed candidate (`fixtures/candidates/mixed_truth_severity_policy_poisoning.txt`)
+  with SHA/length validation in `src/claim_level_config.py`.
 
-No fallback to “latest candidate”. Fixture or SHA mismatch → suite ERROR.
+No required input lives only under `reports/`. No fallback to “latest candidate”.
+Fixture or SHA mismatch → suite ERROR.
 
 ## Historical runners (not production)
 

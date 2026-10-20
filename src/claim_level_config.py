@@ -10,6 +10,8 @@ The suite semantic judge uses ``JUDGE_MODEL`` in ``clients.ollama_client`` (same
 
 from __future__ import annotations
 
+from workspace_setup import PROJECT_ROOT
+
 CLAIM_LEVEL_JUDGE_MODEL = "gemma3:12b"
 CLAIM_LEVEL_JUDGE_MODEL_DIGEST = (
     "sha256:b92b218582c521ba287f38f1d6057dcd3c6cbff036f13cac97b5d861f5e58ec3"
@@ -35,5 +37,8 @@ SUT_GENERATION_MODEL_DIGEST = (
     "sha256:500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41"
 )
 
+# Tracked fixed candidate for long-form judge reruns (not under reports/).
+FIXED_CANDIDATE_RELATIVE_PATH = "fixtures/candidates/mixed_truth_severity_policy_poisoning.txt"
+FIXED_CANDIDATE_PATH = PROJECT_ROOT / FIXED_CANDIDATE_RELATIVE_PATH
 EXPECTED_FIXED_CANDIDATE_SHA256 = "01f683262d203f0fb610f2c587d86c55c5197a70a6596937c30d949c88124407"
 EXPECTED_FIXED_CANDIDATE_LENGTH = 6452

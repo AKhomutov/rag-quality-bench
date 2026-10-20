@@ -1,0 +1,71 @@
+1. **Severity 0** requires a widespread critical failure across multiple regions or an actively exploited security incident exposing data across multiple organizations.  
+2. **10 minutes**.  
+3. No, because the service is not completely unavailable (some parts remain operational).  
+
+4. **Severity 1** requires complete service unavailability or confirmed data exposure.  
+5. **30 minutes**.  
+6. Yes, confirmed data exposure qualifies as Severity 1 even if the service remains available.  
+
+7. **Severity 2** requires a major feature unavailable for significant users, but the service remains operational.  
+8. **2 hours**.  
+9. Yes, if one major feature is down but others work, it qualifies as Severity 2.  
+
+10. **Severity 2.5** requires significant degradation of an important workflow for a substantial subset of users, with partial usability and a limited workaround.  
+11. **4 business hours**.  
+12. Severity 2.5 involves partial usability and a workaround, while Severity 2 is full feature unavailability, and Severity 3 is non-critical feature malfunction.  
+
+13. **Severity 3** requires a non-critical feature malfunctioning with a workaround.  
+14. **8 business hours**.  
+15. **Severity 3** applies if a workaround exists.  
+
+16. **Severity 4** includes cosmetic defects, minor usability issues, and general product questions.  
+17. **2 business days**.  
+18. Yes, a confusing label that doesn’t block work fits Severity 4.  
+
+19. **Severity 5** includes documentation corrections, non-urgent configuration guidance, and feature clarifications.  
+20. **5 business days**.  
+21. Severity 5 is informational (no production impact), while Severity 4 is product-related.  
+
+**Cross-severity questions:**  
+22. **Severity order**: 0 > 1 > 2 > 2.5 > 3 > 4 > 5.  
+23.  
+| Severity | Name       | Conditions                                                                 | Target           |  
+|----------|------------|----------------------------------------------------------------------------|------------------|  
+| 0        | Emergency  | Widespread critical failure across regions or active data exposure across orgs | 10 minutes       |  
+| 1        | Critical   | Complete service unavailability or confirmed data exposure               | 30 minutes       |  
+| 2        | High       | Major feature unavailable for significant users                          | 2 hours          |  
+| 2.5      | Elevated   | Important workflow degraded with partial usability and limited workaround | 4 business hours |  
+| 3        | Medium     | Non-critical feature malfunction with workaround                         | 8 business hours |  
+| 4        | Low        | Cosmetic defects, minor usability issues, or general questions           | 2 business days  |  
+| 5        | Informational | Documentation corrections, non-urgent config guidance, or feature clarifications | 5 business days  |  
+
+24. **Severity levels with partial operational service**: 2, 2.5, 3, 4, 5.  
+25. **Severity 0 and 1** involve security incidents.  
+26. **Severity 0** involves larger-scale, cross-regional failures or active exploitation, while **Severity 1** is service unavailability or confirmed data exposure.  
+27. **Severity 2** is full feature unavailability, while **Severity 2.5** involves degraded workflow with partial usability.  
+28. **Severity 2.5** applies to important workflows with partial usability, while **Severity 3** is non-critical features with workarounds.  
+29. **Severity 4** is product-related (e.g., usability), while **Severity 5** is informational (e.g., documentation).  
+30. **Severity 2** (major feature unavailable for 40% of users).  
+31. **Severity 2.5** (key workflow degraded but usable with a workaround).  
+32. **Severity 4** (cosmetic spelling mistake).  
+33. **Severity 5** (configuration question with no defect).  
+34. **Severity 1** (confirmed data exposure for one org).  
+35. **Severity 0** (cross-org data exposure and regional unavailability).  
+36. The initial response target is for the **initial response**, not full resolution.  
+37. No severity level guarantees a resolution time.  
+38. No severity level requires escalation to management.  
+39. No severity level mandates continuous engineering work.  
+40. No automatic closure timeout if the customer stops responding.  
+
+**Table:**  
+| Severity | Name       | Incident Definition                                                                 | Initial Response Target | Typical Example                          |  
+|----------|------------|-------------------------------------------------------------------------------------|--------------------------|------------------------------------------|  
+| 0        | Emergency  | Widespread critical failure or active data exposure across regions/orgs           | 10 minutes               | Multi-region outage with data breaches    |  
+| 1        | Critical   | Complete service unavailability or confirmed data exposure                       | 30 minutes               | Service down with data breach            |  
+| 2        | High       | Major feature unavailable for significant users                                  | 2 hours                  | Payment gateway failure for 50% users     |  
+| 2.5      | Elevated   | Important workflow degraded with partial usability and limited workaround         | 4 business hours         | Slow search functionality for 30% users   |  
+| 3        | Medium     | Non-critical feature malfunction with workaround                                  | 8 business hours         | Reporting tool error with a workaround    |  
+| 4        | Low        | Cosmetic defects, minor usability issues, or general questions                   | 2 business days          | UI label typo or minor UI inconsistency   |  
+| 5        | Informational | Documentation corrections, config guidance, or feature clarifications           | 5 business days          | How-to guide request for an optional feature |  
+
+**Summary:** Acme Cloud’s severity model prioritizes urgency from **Severity 0 (emergency)** to **Severity 5 (informational)**. Severity 0 and 1 involve critical service or data risks, with rapid response targets. Higher severities (2–5) address operational or informational issues, with escalating response times. Severity 2.5 bridges major outages (Severity 2) and partial usability (Severity 3), while Severity 4 and 5 focus on non-critical product and informational matters.

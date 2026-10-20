@@ -15,8 +15,7 @@ from pathlib import Path
 
 from claim_level_config import (
     CLAIM_LEVEL_NUM_CTX,
-    EXPECTED_FIXED_CANDIDATE_LENGTH,
-    EXPECTED_FIXED_CANDIDATE_SHA256,
+    FIXED_CANDIDATE_RELATIVE_PATH,
     SPLIT_BASE_BATCH_SIZE,
     SPLIT_CLAIM_PIPELINE_KEEP_ALIVE,
     SPLIT_CLAIM_PIPELINE_TEMPERATURE,
@@ -25,7 +24,7 @@ from claim_level_config import (
     SUT_GENERATION_MODEL_DIGEST,
 )
 from clients.ollama_client import OllamaClient, OllamaGenerationResult
-from fixed_candidate_loader import load_identical_candidate_answer, sha256_text
+from fixed_candidate_loader import load_fixed_candidate, sha256_text
 from json_types import JsonObject
 from judges.claim_extractor import (
     build_claim_extraction_json_schema,
@@ -69,12 +68,7 @@ from split_claim_results import (
     split_claim_passed,
     unsupported_premise_pool,
 )
-from workspace_setup import PROJECT_ROOT
 
-REPORTS_ROOT = PROJECT_ROOT / "reports"
-PREVIOUS_TRACE_PATH = (
-    REPORTS_ROOT / "judge_debug" / "20261019T235938" / "mixed_truth_severity_policy_poisoning.jsonl"
-)
 GENERATE_TIMEOUT_SECONDS = 900
 FAKE_SEVERITY_LABELS = ("Severity 0", "Severity 2.5", "Severity 5")
 
@@ -83,21 +77,6 @@ FAKE_SEVERITY_LABELS = ("Severity 0", "Severity 2.5", "Severity 5")
 class TimedGeneration:
     generation: OllamaGenerationResult
     wall_time_seconds: float
-
-
-def assert_fixed_candidate_identity(candidate_answer: str, candidate_sha256: str) -> None:
-    if candidate_sha256 != EXPECTED_FIXED_CANDIDATE_SHA256:
-        msg = (
-            "candidate SHA-256 mismatch: "
-            f"expected {EXPECTED_FIXED_CANDIDATE_SHA256}, got {candidate_sha256}"
-        )
-        raise ValueError(msg)
-    if len(candidate_answer) != EXPECTED_FIXED_CANDIDATE_LENGTH:
-        msg = (
-            "candidate length mismatch: "
-            f"expected {EXPECTED_FIXED_CANDIDATE_LENGTH}, got {len(candidate_answer)}"
-        )
-        raise ValueError(msg)
 
 
 def _generate(
@@ -208,9 +187,8 @@ def run_split_claim_evaluation(*, verbose: bool = True) -> LongFormClaimAuditRes
             authoritative_source = AUTHORITATIVE_DOCUMENT_PATH.read_text(encoding="utf-8")
             reference_facts = reference_facts_as_lines()
 
-            candidate_answer = load_identical_candidate_answer(PREVIOUS_TRACE_PATH)
+            candidate_answer = load_fixed_candidate()
             candidate_sha256 = sha256_text(candidate_answer)
-            assert_fixed_candidate_identity(candidate_answer, candidate_sha256)
         except (OSError, TypeError, ValueError) as exc:
             msg = f"fixed candidate / fixture validation failed: {exc}"
             _log(verbose, f"EXECUTION ERROR: {msg}")
@@ -224,6 +202,7 @@ def run_split_claim_evaluation(*, verbose: bool = True) -> LongFormClaimAuditRes
 
         _log(verbose, f"case: {CASE_ID}")
         _log(verbose, f"prompt fixture SHA-256: {prompt_sha}")
+        _log(verbose, f"Candidate source: {FIXED_CANDIDATE_RELATIVE_PATH}")
         _log(verbose, f"Candidate SHA-256: {candidate_sha256}")
         _log(verbose, f"Candidate length: {len(candidate_answer)}")
         _log(verbose, "SUT was NOT called.")

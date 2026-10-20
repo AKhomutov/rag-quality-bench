@@ -38,7 +38,7 @@ Call-site inventory: [docs/evaluator-llm-audit.md](docs/evaluator-llm-audit.md).
 ## Architecture
 
 ```text
-fixtures/          cases, documents, pinned prompts
+fixtures/          cases, documents, pinned prompts/candidates
 src/
   clients/         AnythingLLM + Ollama clients
   evaluators/      suite runners
@@ -163,8 +163,8 @@ API.
   `nomic-embed-text`, and the AnythingLLM image — see `infra/environment.lock`.
 - Ollama has no reliable pull-by-digest; bootstrap fails if a tag resolves to a
   different artifact.
-- Long-form: `CLAIM_LEVEL_NUM_CTX=16384`, SHA-pinned prompt, SHA-pinned fixed
-  candidate (details in
+- Long-form: `CLAIM_LEVEL_NUM_CTX=16384`, SHA-pinned prompt, and versioned fixed
+  candidate at `fixtures/candidates/` with SHA/length checks (details in
   [docs/evaluator-architecture.md](docs/evaluator-architecture.md)).
 - Model behavior is stochastic; agent cases use repeated trials. Batching can
   shift fine-grained long-form labels while keeping the high-level FAIL.

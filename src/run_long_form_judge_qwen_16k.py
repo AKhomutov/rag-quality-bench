@@ -14,8 +14,7 @@ from claim_level_config import (
     CLAIM_LEVEL_JUDGE_KEEP_ALIVE,
     CLAIM_LEVEL_JUDGE_TEMPERATURE,
     CLAIM_LEVEL_NUM_CTX,
-    EXPECTED_FIXED_CANDIDATE_LENGTH,
-    EXPECTED_FIXED_CANDIDATE_SHA256,
+    FIXED_CANDIDATE_RELATIVE_PATH,
     SUT_GENERATION_MODEL,
     SUT_GENERATION_MODEL_DIGEST,
 )
@@ -28,7 +27,7 @@ from claim_level_results import (
     claim_level_passed,
 )
 from clients.ollama_client import OllamaClient, build_generate_request_body
-from fixed_candidate_loader import load_identical_candidate_answer, sha256_text
+from fixed_candidate_loader import load_fixed_candidate, sha256_text
 from judge_debug import case_trace_path, create_judge_debug_run_dir
 from judges.claim_level_judge import build_claim_level_judge_prompt
 from judges.claim_level_schema import (
@@ -46,9 +45,6 @@ from long_form_severity_prompt import (
 from workspace_setup import PROJECT_ROOT
 
 REPORTS_ROOT = PROJECT_ROOT / "reports"
-PREVIOUS_TRACE_PATH = (
-    REPORTS_ROOT / "judge_debug" / "20261019T235938" / "mixed_truth_severity_policy_poisoning.jsonl"
-)
 JUDGE_GENERATE_TIMEOUT_SECONDS = 900
 
 FAKE_SEVERITY_LABELS = ("Severity 0", "Severity 2.5", "Severity 5")
@@ -61,21 +57,6 @@ FAKE_SEVERITY_FACT_HINTS = {
 
 def format_verdict(passed: bool) -> str:
     return "PASS" if passed else "FAIL"
-
-
-def assert_fixed_candidate_identity(candidate_answer: str, candidate_sha256: str) -> None:
-    if candidate_sha256 != EXPECTED_FIXED_CANDIDATE_SHA256:
-        msg = (
-            "candidate SHA-256 mismatch: "
-            f"expected {EXPECTED_FIXED_CANDIDATE_SHA256}, got {candidate_sha256}"
-        )
-        raise ValueError(msg)
-    if len(candidate_answer) != EXPECTED_FIXED_CANDIDATE_LENGTH:
-        msg = (
-            "candidate length mismatch: "
-            f"expected {EXPECTED_FIXED_CANDIDATE_LENGTH}, got {len(candidate_answer)}"
-        )
-        raise ValueError(msg)
 
 
 def _count_status(result: ClaimLevelJudgeResult, status: str) -> int:
@@ -208,13 +189,12 @@ def main() -> int:
     sut_prompt = load_sut_prompt()
     authoritative_source = AUTHORITATIVE_DOCUMENT_PATH.read_text(encoding="utf-8")
     reference_facts = reference_facts_as_lines()
-    candidate_answer = load_identical_candidate_answer(PREVIOUS_TRACE_PATH)
+    candidate_answer = load_fixed_candidate()
     candidate_sha256 = sha256_text(candidate_answer)
-    assert_fixed_candidate_identity(candidate_answer, candidate_sha256)
     debug_run_dir = create_judge_debug_run_dir(REPORTS_ROOT)
 
     print("Candidate source:")
-    print(PREVIOUS_TRACE_PATH.relative_to(PROJECT_ROOT))
+    print(FIXED_CANDIDATE_RELATIVE_PATH)
     print()
     print("Candidate SHA-256:")
     print(candidate_sha256)

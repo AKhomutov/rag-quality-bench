@@ -1,3 +1,8 @@
+"""Load the tracked fixed candidate, or extract one from a historical JSONL trace.
+
+Tracked fixture path and expected identity live in ``claim_level_config``.
+"""
+
 from __future__ import annotations
 
 import hashlib
@@ -5,16 +10,53 @@ import json
 from pathlib import Path
 from typing import cast
 
+from claim_level_config import (
+    EXPECTED_FIXED_CANDIDATE_LENGTH,
+    EXPECTED_FIXED_CANDIDATE_SHA256,
+    FIXED_CANDIDATE_PATH,
+)
+
 
 def sha256_text(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+def assert_fixed_candidate_identity(candidate_answer: str) -> None:
+    """Validate SHA-256 and character length against the pinned contract."""
+    digest = sha256_text(candidate_answer)
+    if digest != EXPECTED_FIXED_CANDIDATE_SHA256:
+        msg = (
+            f"candidate SHA-256 mismatch: expected {EXPECTED_FIXED_CANDIDATE_SHA256}, got {digest}"
+        )
+        raise ValueError(msg)
+    length = len(candidate_answer)
+    if length != EXPECTED_FIXED_CANDIDATE_LENGTH:
+        msg = f"candidate length mismatch: expected {EXPECTED_FIXED_CANDIDATE_LENGTH}, got {length}"
+        raise ValueError(msg)
+
+
+def load_fixed_candidate(path: Path = FIXED_CANDIDATE_PATH) -> str:
+    """Load the versioned fixed candidate fixture and validate identity.
+
+    Reads UTF-8 with no whitespace normalization. Fails loudly if the file is
+    missing or if SHA-256 / length do not match the pinned contract.
+    """
+    if not path.is_file():
+        msg = f"fixed candidate fixture not found: {path}"
+        raise FileNotFoundError(msg)
+    candidate_answer = path.read_text(encoding="utf-8")
+    assert_fixed_candidate_identity(candidate_answer)
+    return candidate_answer
+
+
 def load_identical_candidate_answer(trace_path: Path) -> str:
-    """Load candidate_answer from a claim-level JSONL trace.
+    """Historical helper: load candidate_answer from a claim-level JSONL trace.
 
     All lines must contain the exact same candidate_answer; otherwise fail loudly.
-    The returned string is not normalized.
+    The returned string is not normalized and is not SHA-validated — callers that
+    need the pinned identity should call ``assert_fixed_candidate_identity``.
+
+    Not used by the current split pipeline or long-form judge runners.
     """
     if not trace_path.is_file():
         msg = f"candidate source trace not found: {trace_path}"
